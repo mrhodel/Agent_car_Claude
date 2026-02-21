@@ -1,0 +1,51 @@
+# ──────────────────────────────────────────────────────────────────
+# Yahboom Raspbot V2 Agent – Python dependencies
+# Install on Raspberry Pi 5:
+#   pip install -r requirements.txt
+#
+# For offline training on a desktop (no GPIO / camera hardware):
+#   pip install -r requirements.txt  # same file – HAL auto-degrades to sim
+#
+# ── Yahboom library ───────────────────────────────────────────────
+# The official Yahboom Python library (Raspbot.py / yahboom_Raspbot.py)
+# is PRE-INSTALLED on the Yahboom SD-card image.  You do NOT need to
+# pip-install it.  If you are setting up a fresh OS image, copy the
+# library from the robot's /home/pi/ directory or install via the
+# Yahboom setup script supplied in the product documentation.
+#
+# If the Yahboom library is not present, hal/yahboom_board.py falls back
+# to direct smbus2 I2C access, and then to simulation mode.
+# ──────────────────────────────────────────────────────────────────
+
+# Core
+numpy>=1.24
+pyyaml>=6.0
+scipy>=1.11          # gaussian_filter for map inflation
+
+# Computer vision
+opencv-python>=4.8   # or opencv-python-headless on headless RPi
+
+# Deep learning (inference + PPO training)
+torch>=2.1           # CPU-only wheel sufficient for RPi 5
+torchvision>=0.16    # MobileNetV2 weights
+
+# RPi hardware (install only on Raspberry Pi)
+# smbus2>=0.4          # I2C fallback (used if Yahboom library absent)
+# picamera2>=0.3       # Only needed if a CSI camera is used instead of USB
+
+# Pillow (required by torchvision transforms)
+Pillow>=10.0
+
+# Optional: MiDaS depth model auto-download via torch.hub
+# (no extra pip install needed – uses timm internally)
+timm>=0.9            # vision transformers, used by MiDaS
+
+# Optional: YOLOv5 object detection
+# ultralytics>=8.0    # YOLOv5 / YOLOv8 via ultralytics package
+            # OR leave blank and let torch.hub download yolov5 on first run
+
+# Logging / utilities
+tqdm>=4.65           # progress bars in trainer
+
+# Testing (dev only)
+pytest>=7.4
