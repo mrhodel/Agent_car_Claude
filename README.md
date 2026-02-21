@@ -49,9 +49,9 @@ Fully autonomous adaptive navigation for the **Yahboom Raspbot V2** (Raspberry P
 | Base | Yahboom Raspbot V2 |
 | SBC | Raspberry Pi 5 (4 GB or 8 GB) |
 | Drive | 4× Mecanum wheels |
-| Range sensor | HC-SR04 ultrasonic (1 transducer + gimbal sweep) |
-| Camera | RPi Camera Module 3 or USB UVC camera |
-| Gimbal | 2-DOF pan-tilt (PCA9685 servos) |
+| Range sensor | HC-SR04 ultrasonic (1 transducer, fixed forward on chassis) |
+| Camera | USB UVC camera (primary); CSI optional |
+| Gimbal | 2-DOF pan-tilt for camera only (Yahboom I2C servos) |
 | Motor driver | Yahboom expansion board (I2C address 0x7A) |
 
 ---
@@ -64,9 +64,9 @@ Agent_car_Claude/
 │   └── robot_config.yaml      # All tuneable parameters
 ├── hal/
 │   ├── motors.py              # Mecanum wheel controller (I2C / GPIO)
-│   ├── ultrasonic.py          # HC-SR04 with median filter + ray sweep
-│   ├── gimbal.py              # PCA9685 pan-tilt controller
-│   └── camera.py              # picamera2 / USB / sim back-end
+│   ├── ultrasonic.py          # HC-SR04 fixed forward sensor via I2C
+│   ├── gimbal.py              # Camera pan-tilt via Yahboom I2C servos
+│   └── camera.py              # USB (primary) / CSI / sim back-end
 ├── perception/
 │   ├── vision.py              # Main pipeline (orchestrates below)
 │   ├── depth_estimator.py     # MiDaS monocular depth
