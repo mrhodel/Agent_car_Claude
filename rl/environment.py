@@ -149,6 +149,18 @@ class RobotEnv:
         if self._mode == "robot":
             if self._motors: self._motors.stop()
             if self._gimbal: self._gimbal.centre()
+            # Wall escape: back away if pressed against an obstacle
+            if self._us and self._motors:
+                for attempt in range(3):
+                    dist = self._us.read_cm()
+                    if dist >= 30.0:
+                        break
+                    logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
+                                attempt + 1, dist)
+                    self._motors.move_backward(40)
+                    time.sleep(0.4)
+                    self._motors.stop()
+                    time.sleep(0.15)
             time.sleep(0.1)
         else:
             self._sim_place_robot()

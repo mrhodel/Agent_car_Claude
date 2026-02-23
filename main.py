@@ -113,7 +113,12 @@ def train_mode(cfg: dict, args: argparse.Namespace) -> None:
         state_dim=state_dim, n_actions=n_actions,
         hidden_dim=int(rl_cfg.get("ppo", {}).get("hidden_dim", 256)),
     )
-    agent = PPOAgent(policy=policy, cfg=rl_cfg.get("ppo", {}),
+    ppo_cfg = dict(rl_cfg.get("ppo", {}))
+    if mode == "robot" and "hardware_rollout_steps" in ppo_cfg:
+        ppo_cfg["rollout_steps"] = ppo_cfg["hardware_rollout_steps"]
+        logging.getLogger().info("Hardware mode: rollout_steps -> %d",
+                                  ppo_cfg["rollout_steps"])
+    agent = PPOAgent(policy=policy, cfg=ppo_cfg,
                      state_dim=state_dim, n_actions=n_actions)
 
     if args.checkpoint and os.path.exists(args.checkpoint):

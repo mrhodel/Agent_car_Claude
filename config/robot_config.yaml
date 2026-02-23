@@ -169,11 +169,12 @@ rl:
     entropy_coeff: 0.01
     epochs_per_update: 4
     batch_size: 64
-    rollout_steps: 512
+    rollout_steps: 512         # sim training
+    hardware_rollout_steps: 64  # robot training (update ~every 1 min of real movement)
     hidden_dim: 256
     max_steps_per_episode: 500  # cap episode length during training
     checkpoint_dir: models/checkpoints
-    checkpoint_interval: 50   # episodes
+    checkpoint_interval: 10   # episodes (works for both sim and hardware)
 
 # ── Agent Orchestrator ────────────────────────────────────────────
 agent:
