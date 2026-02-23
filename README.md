@@ -52,7 +52,7 @@ Fully autonomous adaptive navigation for the **Yahboom Raspbot V2** (Raspberry P
 | Range sensor | HC-SR04 ultrasonic (1 transducer, fixed forward on chassis) |
 | Camera | USB UVC camera (primary); CSI optional |
 | Gimbal | 2-DOF pan-tilt for camera only (Yahboom I2C servos) |
-| Motor driver | Yahboom expansion board (I2C address 0x7A) |
+| Motor driver | Yahboom expansion board (I2C address `0x2B`) |
 
 ---
 
@@ -97,70 +97,72 @@ Agent_car_Claude/
 
 ## Quick Start
 
-### 1 · Install dependencies
+### 1 · Install dependencies (Raspberry Pi)
 
 ```bash
-# On Raspberry Pi 5
-pip install -r requirements.txt
-
-# Uncomment the RPi-specific lines in requirements.txt first:
-#   RPi.GPIO, smbus2, picamera2, adafruit-circuitpython-pca9685
+pip install -r requirements.txt --break-system-packages
 ```
 
-### 2 · Configure hardware
-
-Edit `config/robot_config.yaml` to match your wiring:
-```yaml
-hal:
-  motor:
-    driver: yahboom_i2c       # or gpio_pwm / simulation
-  ultrasonic:
-    trig: 27
-    echo: 22
-  gimbal:
-    driver: pca9685
-    pan_channel: 0
-    tilt_channel: 1
-  camera:
-    driver: picamera2         # or usb / simulation
-```
-
-### 3 · Hardware self-test
+### 2 · Hardware self-test
 
 ```bash
 python main.py --mode test
 ```
 
-### 4 · Train the RL policy (simulation, no hardware)
+This exercises motors, gimbal, ultrasonic, and camera in sequence.
 
-```bash
-python main.py --mode train --episodes 500
-# Checkpoints saved to models/checkpoints/
+### 3 · Train the RL policy – fast GPU training on Windows
+
+Recommended workflow: train in simulation on a Windows PC with NVIDIA GPU
+(~1 ep/s), then fine-tune with `--hardware` on the Pi.
+
+See **[WINDOWS_TRAINING.md](WINDOWS_TRAINING.md)** for the full step-by-step guide.
+
+Quick summary:
+```powershell
+# On Windows (PowerShell)
+python -m venv robot_venv
+.\robot_venv\Scripts\Activate.ps1
+pip install -r requirements_desktop.txt
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+python main.py --mode train --episodes 1500
+# ~25 min on RTX 3050  |  checkpoint saved to models\checkpoints\policy_ep1500.pt
 ```
 
-### 5 · Fine-tune on the real robot
+### 4 · Copy checkpoint to Pi and fine-tune on hardware
 
-```bash
-python main.py --mode train --episodes 100 --hardware \
-               --checkpoint models/checkpoints/policy_ep500.pt
+```powershell
+# Copy checkpoint from Windows to Pi
+scp models\checkpoints\policy_ep1500.pt pi@<PI_IP>:~/robot_car_claude/Agent_car_Claude/models/checkpoints/
 ```
 
-### 6 · Run autonomously
+```bash
+# On Pi – fine-tune with real sensors/motors (~20 episodes)
+python main.py --mode train --episodes 20 --hardware \
+               --checkpoint models/checkpoints/policy_ep1500.pt
+```
+
+Place the robot in a clear ~2 m × 2 m area. The emergency stop fires
+automatically if the ultrasonic reads < 10 cm.
+
+### 5 · Run autonomously
 
 ```bash
-python main.py --mode run \
-               --checkpoint models/checkpoints/policy_final.pt
+python main.py --mode run --checkpoint models/checkpoints/policy_ep1500.pt
 ```
 
 ---
 
 ## RL State & Action Space
 
-### State vector (443 float32 values with default config)
+### State vector (439 float32 values with default config)
+
+The HC-SR04 is a **fixed** forward-facing sensor — it does not sweep.
+Only the camera (on the gimbal) can pan.
 
 | Slice | Size | Description |
 |---|---|---|
-| Ultrasonic rays | 5 | Normalised distances at [-60°,-30°,0°,+30°,+60°] |
+| Ultrasonic | 1 | Forward distance, normalised 0–1 |
 | Visual features | 128 | MobileNetV2 bottleneck projection |
 | Depth map | 256 | Flattened 16×16 monocular depth estimate |
 | Local map | 49 | 7×7 occupancy probability window around robot |
@@ -194,6 +196,19 @@ python main.py --mode run \
 | Smooth motion bonus | +0.05 |
 | Same action continuation | +0.025 |
 | Reversal penalty | −0.05 |
+
+---
+
+## Training Results
+
+Baseline sim training run (RTX 3050, cu126, ~24 min):
+
+| Metric | Value |
+|---|---|
+| Episodes | 1500 |
+| Final mean100 reward | 11 464 |
+| Mean explored cells/ep | 13 648  (~34 m² at 0.05 m/cell) |
+| Throughput | ~1 ep/s |
 
 ---
 
