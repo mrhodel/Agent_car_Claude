@@ -111,33 +111,73 @@ python main.py --mode test
 
 This exercises motors, gimbal, ultrasonic, and camera in sequence.
 
-### 3 · Train the RL policy – fast GPU training on Windows
+### 3 · Train on Windows (GPU, recommended)
 
 Recommended workflow: train in simulation on a Windows PC with NVIDIA GPU
 (~1 ep/s), then fine-tune with `--hardware` on the Pi.
 
-See **[WINDOWS_TRAINING.md](WINDOWS_TRAINING.md)** for the full step-by-step guide.
-
-Quick summary:
+**3a – Copy files from Pi to Windows** (PowerShell):
 ```powershell
-# On Windows (PowerShell)
+scp -r pi@10.0.0.183:~/robot_car_claude/Agent_car_Claude C:\Users\mhode\
+cd C:\Users\mhode\Agent_car_Claude
+```
+
+**3b – Create virtual environment:**
+```powershell
 python -m venv robot_venv
+```
+If activation is blocked, run once: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+```powershell
 .\robot_venv\Scripts\Activate.ps1
+```
+
+**3c – Install dependencies:**
+```powershell
 pip install -r requirements_desktop.txt
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+```
+Use `cu126` for CUDA 12.x / 13.x. For other versions see https://pytorch.org/get-started/locally/
+
+Verify GPU:
+```powershell
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# Expected: True  NVIDIA GeForce RTX 3050
+```
+
+**3d – Run training:**
+```powershell
 python main.py --mode train --episodes 1500
-# ~25 min on RTX 3050  |  checkpoint saved to models\checkpoints\policy_ep1500.pt
+# ~25 min on RTX 3050  |  checkpoints saved every 50 ep to models\checkpoints\
+```
+
+**Key training parameters** (`config/robot_config.yaml`):
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `rl.ppo.max_steps_per_episode` | 500 | Max env steps per episode |
+| `rl.ppo.rollout_steps` | 512 | PPO buffer size before update |
+| `rl.ppo.learning_rate` | 3e-4 | Adam LR |
+| `rl.ppo.hidden_dim` | 256 | Actor-critic MLP width |
+| `rl.ppo.checkpoint_interval` | 50 | Save every N episodes |
+| `mapping.grid.initial_size_cells` | 200 | 200×200 = 10 m×10 m map |
+| `mapping.grid.inflate_interval` | 10 | Gaussian blur every N steps (0=off) |
+
+To maximise training speed, set `inflate_interval: 0` (disables obstacle inflation, safe for sim).
+
+**Re-running from a checkpoint:**
+```powershell
+python main.py --mode train --episodes 500 --checkpoint models\checkpoints\policy_ep1500.pt
 ```
 
 ### 4 · Copy checkpoint to Pi and fine-tune on hardware
 
 ```powershell
 # Copy checkpoint from Windows to Pi
-scp models\checkpoints\policy_ep1500.pt pi@<PI_IP>:~/robot_car_claude/Agent_car_Claude/models/checkpoints/
+scp models\checkpoints\policy_ep1500.pt pi@10.0.0.183:~/robot_car_claude/Agent_car_Claude/models/checkpoints/
 ```
 
 ```bash
-# On Pi – fine-tune with real sensors/motors (~20 episodes)
+# On Pi – fine-tune with real sensors/motors (~20 episodes, ~60 min)
 python main.py --mode train --episodes 20 --hardware \
                --checkpoint models/checkpoints/policy_ep1500.pt
 ```
@@ -150,6 +190,22 @@ automatically if the ultrasonic reads < 10 cm.
 ```bash
 python main.py --mode run --checkpoint models/checkpoints/policy_ep1500.pt
 ```
+
+---
+
+## Troubleshooting
+
+**`Activate.ps1` not recognised**
+→ Prefix with `.\` and ensure you're in the project directory: `.\robot_venv\Scripts\Activate.ps1`
+
+**`torch.cuda.is_available()` returns `False`**
+→ Wrong wheel installed. Reinstall with the correct `cu126` index URL above.
+
+**Only rear wheels move**
+→ Motor IDs are 0-based (0=FL, 1=RL, 2=FR, 3=RR). Check `hal/yahboom_board.py` uses `start=0`.
+
+**Ultrasonic always reads 400 cm**
+→ `Ctrl_Ulatist_Switch(1)` must be called before reading. Check `hal/yahboom_board.py` `get_distance()`.
 
 ---
 
