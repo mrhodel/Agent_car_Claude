@@ -148,7 +148,9 @@ rl:
     names: [forward, backward, strafe_left, strafe_right,
             rotate_left, rotate_right, gimbal_pan_left,
             gimbal_pan_right, gimbal_tilt_up, gimbal_tilt_down, stop]
-    base_speed: 55             # duty cycle for RL actions
+    base_speed: 55             # duty cycle for forward
+    strafe_speed: 30           # lower = fewer cm/step sideways (no side sensors)
+    reverse_speed: 30          # lower = fewer cm/step backward (no rear sensor)
     rotate_speed: 45
     gimbal_step_deg: 10
 

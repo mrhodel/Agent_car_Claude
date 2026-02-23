@@ -105,8 +105,10 @@ class RobotEnv:
         self._include_vel   = bool(state_cfg.get("include_velocity",  True))
         self._include_hdg   = bool(state_cfg.get("include_heading",   True))
 
-        self._base_speed    = int(action_cfg.get("base_speed",   55))
-        self._rotate_speed  = int(action_cfg.get("rotate_speed", 45))
+        self._base_speed    = int(action_cfg.get("base_speed",    55))
+        self._strafe_speed  = int(action_cfg.get("strafe_speed",  30))
+        self._reverse_speed = int(action_cfg.get("reverse_speed", 30))
+        self._rotate_speed  = int(action_cfg.get("rotate_speed",  45))
         self._gimbal_step   = float(action_cfg.get("gimbal_step_deg", 10))
         # No ray_angles needed: ultrasonic is fixed (always forward = 0°)
 
@@ -304,7 +306,9 @@ class RobotEnv:
     def _execute_action_robot(self, action: int) -> bool:
         if self._controller:
             self._controller.move_action(action, self._base_speed,
-                                          self._rotate_speed)
+                                          self._rotate_speed,
+                                          self._strafe_speed,
+                                          self._reverse_speed)
         if self._gimbal:
             step = self._gimbal_step
             if action == ACT_PAN_LEFT:

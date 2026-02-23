@@ -117,7 +117,9 @@ class MotionController:
     # ── Point-to-point move (used by RL discrete actions) ─────────
 
     def move_action(self, action: int, speed: int = 55,
-                    rotate_speed: int = 45) -> None:
+                    rotate_speed: int = 45,
+                    strafe_speed: int = 30,
+                    reverse_speed: int = 30) -> None:
         """
         Map a discrete RL action index to a motor command.
 
@@ -127,11 +129,11 @@ class MotionController:
         if action == 0:
             self._motors.move_forward(speed)
         elif action == 1:
-            self._motors.move_backward(speed)
+            self._motors.move_backward(reverse_speed)
         elif action == 2:
-            self._motors.strafe_left(speed)
+            self._motors.strafe_left(strafe_speed)
         elif action == 3:
-            self._motors.strafe_right(speed)
+            self._motors.strafe_right(strafe_speed)
         elif action == 4:
             self._motors.rotate_left(rotate_speed)
         elif action == 5:
