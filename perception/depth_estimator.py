@@ -51,7 +51,7 @@ class DepthEstimator:
         try:
             import torch
             torch_hub_name = _MIDAS_MODELS.get(self._model_name, "MiDaS_small")
-            logger.info("[Depth] Loading %s …", torch_hub_name)
+            logger.info("[Depth] Loading %s ...", torch_hub_name)
             self._model = torch.hub.load("intel-isl/MiDaS", torch_hub_name,
                                           trust_repo=True)
             self._model.eval()
@@ -61,7 +61,7 @@ class DepthEstimator:
             self._torch = torch
             logger.info("[Depth] MiDaS loaded on %s", self._device)
         except Exception as exc:
-            logger.warning("[Depth] MiDaS unavailable (%s) → gradient proxy", exc)
+            logger.warning("[Depth] MiDaS unavailable (%s) -> gradient proxy", exc)
             self._model_name = "none"
 
     # ── Public API ────────────────────────────────────────────────

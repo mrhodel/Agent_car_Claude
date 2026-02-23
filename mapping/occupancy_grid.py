@@ -63,9 +63,11 @@ class OccupancyGrid:
         self._size  = int(cfg.get("initial_size_cells", 400))
         self._exp_thresh  = int(cfg.get("expand_threshold",  20))
         self._exp_amount  = int(cfg.get("expand_amount",    100))
-        self._decay_rate  = float(cfg.get("decay_rate", 0.001))
-        self._blur_sigma  = float(cfg.get("blur_sigma", 0.8))
-        self._obs_thresh  = float(cfg.get("obstacle_threshold", 0.65))
+        self._decay_rate       = float(cfg.get("decay_rate", 0.001))
+        self._blur_sigma       = float(cfg.get("blur_sigma", 0.8))
+        self._obs_thresh       = float(cfg.get("obstacle_threshold", 0.65))
+        self._inflate_interval = int(cfg.get("inflate_interval", 1))  # 0=disabled
+        self._inflate_counter  = 0
         self._free_thresh = float(cfg.get("free_threshold",     0.35))
 
         # Log-odds parameters
@@ -92,11 +94,27 @@ class OccupancyGrid:
         # Exploration coverage counter
         self._explored_cells = 0
 
-        logger.info("[Map] %dx%d cells, %.2f m/cell → %.1f m × %.1f m",
+        logger.info("[Map] %dx%d cells, %.2f m/cell -> %.1f m x %.1f m",
                     self._size, self._size, self._res,
                     self._size * self._res, self._size * self._res)
 
     # ── Public API ────────────────────────────────────────────────
+
+    def soft_reset(self) -> None:
+        """Re-initialise grid values in-place (avoids re-allocation)."""
+        self._grid[:] = self._lo_prior
+        self._known[:] = False
+        # Trim to initial size if the grid has grown
+        if self._grid.shape != (self._size, self._size):
+            self._grid  = np.full((self._size, self._size),
+                                   self._lo_prior, dtype=np.float32)
+            self._known = np.zeros((self._size, self._size), dtype=bool)
+        self._origin_row = self._size // 2
+        self._origin_col = self._size // 2
+        self._frontiers  = []
+        self._last_frontier_update = 0.0
+        self._explored_cells = 0
+        self._inflate_counter = 0
 
     def update(
         self,
@@ -141,7 +159,12 @@ class OccupancyGrid:
                     new_cells += self._update_cell(r, c, free=True)
 
         # Apply Gaussian inflation around obstacles (for safety margin)
-        self._inflate_obstacles()
+        # Throttled by inflate_interval to avoid expensive per-step blur
+        if self._inflate_interval > 0:
+            self._inflate_counter += 1
+            if self._inflate_counter >= self._inflate_interval:
+                self._inflate_counter = 0
+                self._inflate_obstacles()
 
         # Decay toward prior for dynamic environments
         self._grid += self._decay_rate * (self._lo_prior - self._grid)

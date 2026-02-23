@@ -103,14 +103,20 @@ class MotorController:
     @staticmethod
     def _mecanum_ik(vx: float, vy: float, omega: float) -> MotorValues:
         """
-        Standard Mecanum wheel IK (45° roller orientation, + orientation).
+        Mecanum wheel IK matched to Yahboom Raspbot V2 physical wiring.
 
-        Wheel velocity = vx ± vy ± omega
+        Verified against official McLumk_Wheel_Sports.py:
+          ID0 FL : +vx +vy -omega
+          ID1 RL : +vx -vy -omega
+          ID2 FR : +vx -vy +omega
+          ID3 RR : +vx +vy +omega
+
+        Convention: +vx = forward, +vy = strafe right, +omega = rotate left (CCW)
         """
-        fl = ( vx - vy - omega) * 100.0
-        fr = ( vx + vy + omega) * 100.0
-        rl = ( vx + vy - omega) * 100.0
-        rr = ( vx - vy + omega) * 100.0
+        fl = ( vx + vy - omega) * 100.0
+        fr = ( vx - vy + omega) * 100.0
+        rl = ( vx - vy - omega) * 100.0
+        rr = ( vx + vy + omega) * 100.0
         return MotorValues(int(fl), int(fr), int(rl), int(rr))
 
     # ── Board dispatch ────────────────────────────────────────────

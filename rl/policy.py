@@ -15,6 +15,7 @@ Optional GRU layer for temporal memory (enabled via cfg).
 """
 from __future__ import annotations
 
+import logging
 import math
 from typing import Tuple
 
@@ -90,6 +91,8 @@ class ActorCriticNumpy:
 
 # ── PyTorch implementation (preferred) ───────────────────────────
 
+_logger = logging.getLogger(__name__)
+
 try:
     import torch
     import torch.nn as nn
@@ -112,9 +115,15 @@ try:
             n_actions:  int,
             hidden_dim: int = 256,
             use_gru:    bool = False,
+            device:     str | None = None,
         ) -> None:
             super().__init__()
             self.use_gru = use_gru
+            self.device = torch.device(
+                device if device
+                else ("cuda" if torch.cuda.is_available() else "cpu")
+            )
+            _logger.info("[Policy] Using device: %s", self.device)
 
             # Shared encoder
             self.shared = nn.Sequential(
@@ -146,6 +155,7 @@ try:
             )
 
             self._init_weights()
+            self.to(self.device)
 
         def _init_weights(self) -> None:
             for m in self.modules():
@@ -185,7 +195,7 @@ try:
             Returns (action, log_prob, value, new_hidden).
             """
             with torch.no_grad():
-                t = torch.from_numpy(state).float().unsqueeze(0)
+                t = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
                 logits, val, new_h = self.forward(t, hidden)
                 dist = torch.distributions.Categorical(logits=logits)
                 if deterministic:

@@ -88,7 +88,30 @@ class YahboomBoard:
     # ── Backend initialisation ────────────────────────────────────
 
     def _init_backend(self) -> str:
-        # 1. Try the official Yahboom library
+        import sys, os
+
+        # Inject well-known Yahboom library paths so the official driver
+        # is found even when it is not installed as a system package.
+        _YAHBOOM_PATHS = [
+            "/home/pi/py_install/Raspbot_Lib",
+            "/home/pi/project_demo/raspbot",
+            "/home/pi",
+        ]
+        for _p in _YAHBOOM_PATHS:
+            if os.path.isdir(_p) and _p not in sys.path:
+                sys.path.insert(0, _p)
+
+        # 1. Try the official Yahboom library (Raspbot_Lib.py on RPi 5 image)
+        try:
+            from Raspbot_Lib import Raspbot  # type: ignore[import]
+            self._lib = Raspbot()
+            return "raspbot_lib"
+        except ImportError:
+            pass
+        except Exception as exc:
+            logger.debug("[YahboomBoard] Raspbot_Lib load error: %s", exc)
+
+        # 1b. Older image name
         try:
             from Raspbot import Raspbot          # type: ignore[import]
             self._lib = Raspbot()
@@ -98,7 +121,7 @@ class YahboomBoard:
         except Exception as exc:
             logger.debug("[YahboomBoard] Raspbot lib load error: %s", exc)
 
-        # 1b. Some images expose it as 'yahboom_Raspbot'
+        # 1c. Some images expose it as 'yahboom_Raspbot'
         try:
             from yahboom_Raspbot import Raspbot  # type: ignore[import]
             self._lib = Raspbot()
@@ -116,9 +139,9 @@ class YahboomBoard:
             self._i2c_set_motors(0, 0, 0, 0)
             return "smbus2_raw"
         except ImportError:
-            logger.info("[YahboomBoard] smbus2 not found → simulation")
+            logger.info("[YahboomBoard] smbus2 not found -> simulation")
         except Exception as exc:
-            logger.warning("[YahboomBoard] smbus2 open failed (%s) → simulation", exc)
+            logger.warning("[YahboomBoard] smbus2 open failed (%s) -> simulation", exc)
 
         # 3. Simulation stub
         self._sim = True
@@ -141,9 +164,13 @@ class YahboomBoard:
         rr = _clamp(rr)
 
         if self._lib:
-            # Yahboom official library (method name varies by firmware)
+            # Yahboom official library — Ctrl_Muto(motor_id, speed -255..255)
+            # IDs are 0-based: 0=L1(FL), 1=L2(RL), 2=R1(FR), 3=R2(RR)
+            # Scale from our -100..+100 range to library's -255..+255
             try:
-                self._lib.Ctrl_Car(fl, fr, rl, rr)
+                for mid, val in enumerate([fl, rl, fr, rr], start=0):
+                    scaled = int(val * 2.55)
+                    self._lib.Ctrl_Muto(mid, scaled)
             except AttributeError:
                 try:
                     self._lib.set_motor(fl, fr, rl, rr)
@@ -183,7 +210,7 @@ class YahboomBoard:
         elif self._bus:
             self._i2c_set_servo(servo_id, angle_deg)
         else:
-            logger.debug("[Board-sim] servo %d → %.1f°", servo_id, angle_deg)
+            logger.debug("[Board-sim] servo %d -> %.1f deg", servo_id, angle_deg)
 
     # ── Public ultrasonic API ─────────────────────────────────────
 
@@ -196,19 +223,28 @@ class YahboomBoard:
         """
         if self._lib:
             try:
-                raw = self._lib.Get_Distance()
+                # Trigger a measurement, then read hi/lo registers (in mm)
+                # 0x1b = distance high byte, 0x1a = distance low byte
+                self._lib.Ctrl_Ulatist_Switch(1)
+                time.sleep(0.08)
+                hi = self._lib.read_data_array(0x1b, 1)[0]
+                lo = self._lib.read_data_array(0x1a, 1)[0]
+                raw_mm = (hi << 8) | lo
+                raw = raw_mm / 10.0  # convert mm → cm
             except AttributeError:
                 try:
-                    raw = self._lib.get_distance()
+                    raw = self._lib.Get_Distance()
                 except AttributeError:
-                    raw = self._lib.Get_Sonar()
+                    raw = self._lib.get_distance()
+            except Exception:
+                raw = None
             if raw is None or raw <= 0:
                 return 400.0
             return float(raw)
         elif self._bus:
             return self._i2c_get_distance()
         else:
-            logger.debug("[Board-sim] get_distance → 200.0 cm")
+            logger.debug("[Board-sim] get_distance -> 200.0 cm")
             return 200.0   # safe default in simulation
 
     # ── I2C helper methods ────────────────────────────────────────

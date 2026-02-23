@@ -127,7 +127,7 @@ class RobotEnv:
         self._robot_theta = 0.0
         self._vx = self._vy = self._omega = 0.0
         self._step_count  = 0
-        self._max_steps   = 2000
+        self._max_steps   = int(rl_cfg.get("ppo", {}).get("max_steps_per_episode", 500))
 
         # For simulation mode
         self._sim_obstacles: list = []   # list of (x, y, radius_m)
@@ -154,11 +154,8 @@ class RobotEnv:
             self._sim_place_robot()
 
         if self._grid:
-            from mapping.occupancy_grid import OccupancyGrid
-            cfg_grid = self._cfg.get("mapping", {}).get("grid", {})
-            # Re-initialise grid in-place
-            new_grid = OccupancyGrid(cfg_grid)
-            self._grid.__dict__.update(new_grid.__dict__)
+            # Reset grid state in-place (no re-allocation)
+            self._grid.soft_reset()
 
         return self._get_state()
 
@@ -215,8 +212,13 @@ class RobotEnv:
         self._prev_action = action
 
         self._step_count += 1
-        done = (collided and nearest_cm < self._emergency_cm
+        # Emergency stop triggers on distance alone (collided is not reliable
+        # in robot mode because _execute_action_robot always returns False)
+        emergency = nearest_cm < self._emergency_cm
+        done = (emergency or collided
                 or self._step_count >= self._max_steps)
+        if emergency and self._mode == "robot" and self._motors:
+            self._motors.stop()
 
         state = self._get_state(obs_result, us_dists)
         info  = {

@@ -44,9 +44,10 @@ class Gimbal:
 
     def __init__(self, cfg: dict, board: YahboomBoard = None) -> None:
         self._cfg = cfg
-        self._pan_range  = cfg.get("pan_range",  [-90, 90])
-        self._tilt_range = cfg.get("tilt_range", [-45, 30])
-        self._speed      = float(cfg.get("move_speed_deg_s", 120))
+        self._pan_range   = cfg.get("pan_range",   [-90, 90])
+        self._tilt_range  = cfg.get("tilt_range",  [-45, 30])
+        self._tilt_neutral = float(cfg.get("tilt_neutral", 90))  # servo angle for level
+        self._speed       = float(cfg.get("move_speed_deg_s", 120))
 
         # Current angles (degrees from centre)
         self._pan  = 0.0
@@ -69,18 +70,19 @@ class Gimbal:
     # ── Public API ────────────────────────────────────────────────
 
     def set_pan(self, degrees: float) -> None:
-        """Set pan angle (degrees from centre; 0 = forward)."""
+        """Set pan angle (degrees from centre; 0 = forward, +ve = right)."""
         degrees = float(max(self._pan_range[0],
                             min(self._pan_range[1], degrees)))
         self._pan = degrees
-        self._board.set_servo(_SERVO_PAN, self._to_absolute(degrees))
+        # Negate: physical servo direction is reversed on this hardware
+        self._board.set_servo(_SERVO_PAN, self._to_absolute(-degrees))
 
     def set_tilt(self, degrees: float) -> None:
-        """Set tilt angle (degrees from horizontal; 0 = level)."""
+        """Set tilt angle (degrees from horizontal; 0 = level, +ve = up)."""
         degrees = float(max(self._tilt_range[0],
                             min(self._tilt_range[1], degrees)))
         self._tilt = degrees
-        self._board.set_servo(_SERVO_TILT, self._to_absolute(degrees))
+        self._board.set_servo(_SERVO_TILT, self._tilt_neutral + degrees)
 
     def move_pan(self, delta_deg: float) -> None:
         self.set_pan(self._pan + delta_deg)
@@ -127,7 +129,7 @@ class Gimbal:
     def _to_absolute(degrees_from_centre: float) -> float:
         """
         Convert relative degrees (-90…+90 from centre) to Yahboom absolute
-        servo angle (0-180, where 90 = centre).
+        servo angle (0-180, where 90 = centre). Used for pan only.
         """
         return 90.0 + degrees_from_centre
 

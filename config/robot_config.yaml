@@ -15,7 +15,7 @@ hal:
   motor:
     driver: yahboom             # yahboom | simulation
     i2c_bus: 1
-    i2c_address: 0x7A          # Yahboom expansion board I2C address
+    i2c_address: 0x2B          # Yahboom expansion board I2C address (PI5Car_I2CADDR)
     max_speed: 80               # duty-cycle cap passed to YahboomBoard
 
   ultrasonic:
@@ -23,7 +23,7 @@ hal:
     # It connects to the Yahboom expansion board (NOT to RPi GPIO).
     # The gimbal is for the CAMERA only – it does not move the ultrasonic.
     i2c_bus: 1
-    i2c_address: 0x7A          # same expansion board as motors/servos
+    i2c_address: 0x2B          # same expansion board as motors/servos
     max_range_cm: 400
     min_range_cm: 2
     samples_per_reading: 3     # median filter over N acquisitions
@@ -34,9 +34,10 @@ hal:
     # No PCA9685 or direct GPIO – everything through the board.
     driver: yahboom             # yahboom | simulation
     i2c_bus: 1
-    i2c_address: 0x7A          # same expansion board as motors/ultrasonic
+    i2c_address: 0x2B          # same expansion board as motors/ultrasonic
     pan_range: [-90, 90]       # degrees from centre
     tilt_range: [-45, 30]
+    tilt_neutral: 30           # raw servo angle (0-180) that points camera level
     move_speed_deg_s: 120      # max angular velocity (software-limited)
 
   camera:
@@ -93,9 +94,10 @@ perception:
 mapping:
   grid:
     resolution_m: 0.05         # metres per cell
-    initial_size_cells: 400    # 400×400 → 20 m × 20 m
+    initial_size_cells: 200    # 200×200 → 10 m × 10 m  (faster; expands if needed)
     expand_threshold: 20       # grow when robot < N cells from edge
     expand_amount: 100
+    inflate_interval: 10       # run gaussian obstacle inflation every N steps (0=disabled)
     p_prior: 0.50
     p_occ_hit:  0.75
     p_occ_miss: 0.40
@@ -169,6 +171,7 @@ rl:
     batch_size: 64
     rollout_steps: 512
     hidden_dim: 256
+    max_steps_per_episode: 500  # cap episode length during training
     checkpoint_dir: models/checkpoints
     checkpoint_interval: 50   # episodes
 

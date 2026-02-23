@@ -156,11 +156,12 @@ class PPOAgent:
         )
 
         # Convert to tensors
-        states    = torch.FloatTensor(np.array(buf.states))
-        actions   = torch.LongTensor(buf.actions)
-        old_lps   = torch.FloatTensor(buf.log_probs)
-        advs      = torch.FloatTensor(advantages)
-        rets      = torch.FloatTensor(returns)
+        dev = self._policy.device if hasattr(self._policy, 'device') else torch.device('cpu')
+        states    = torch.FloatTensor(np.array(buf.states)).to(dev)
+        actions   = torch.LongTensor(buf.actions).to(dev)
+        old_lps   = torch.FloatTensor(buf.log_probs).to(dev)
+        advs      = torch.FloatTensor(advantages).to(dev)
+        rets      = torch.FloatTensor(returns).to(dev)
         advs      = (advs - advs.mean()) / (advs.std() + 1e-8)  # normalise
 
         self._buffer.clear()
@@ -234,7 +235,7 @@ class PPOAgent:
             import torch
             path = os.path.join(self._ckpt_dir, f"policy_{tag}.pt")
             torch.save(self._policy.state_dict(), path)
-            logger.info("[PPO] Checkpoint saved → %s", path)
+            logger.info("[PPO] Checkpoint saved -> %s", path)
         else:
             path = os.path.join(self._ckpt_dir, f"policy_{tag}.npz")
             self._policy.save(path)
@@ -244,7 +245,7 @@ class PPOAgent:
             import torch
             self._policy.load_state_dict(
                 torch.load(path, map_location="cpu"))
-            logger.info("[PPO] Checkpoint loaded ← %s", path)
+            logger.info("[PPO] Checkpoint loaded <- %s", path)
         else:
             self._policy.load(path)
 

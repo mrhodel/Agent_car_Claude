@@ -64,7 +64,7 @@ class Camera:
             import cv2
             cap = cv2.VideoCapture(self._device)
             if not cap.isOpened():
-                logger.warning("[Camera] USB device %d not found → sim", self._device)
+                logger.warning("[Camera] USB device %d not found -> sim", self._device)
                 self._driver = "simulation"
                 cap.release()
             else:
@@ -90,7 +90,7 @@ class Camera:
                 logger.info("[Camera] picamera2  %dx%d @ %d fps",
                             self._width, self._height, self._fps)
             except Exception as exc:
-                logger.warning("[Camera] picamera2 unavailable (%s) → USB", exc)
+                logger.warning("[Camera] picamera2 unavailable (%s) -> USB", exc)
                 self._driver = "usb"
                 # Re-try as USB
                 self._init_driver()

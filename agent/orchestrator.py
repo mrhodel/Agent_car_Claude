@@ -260,7 +260,7 @@ class AgentOrchestrator:
     # ── FSM handlers ─────────────────────────────────────────────
 
     def _handle_init(self) -> None:
-        logger.info("[FSM] INIT → performing camera gimbal sweep + map seed")
+        logger.info("[FSM] INIT -> performing camera gimbal sweep + map seed")
         self._full_scan()
         self._rl_state = self._env.reset()
         self._transition(AgentState.EXPLORE)
@@ -389,11 +389,11 @@ class AgentOrchestrator:
         img = self._grid.to_image(self._pose)
         path = os.path.join(log_dir, "map_latest.png")
         cv2.imwrite(path, img)
-        logger.debug("[Orchestrator] Map saved → %s", path)
+        logger.debug("[Orchestrator] Map saved -> %s", path)
 
     def _transition(self, new_state: AgentState) -> None:
         if new_state != self._state:
-            logger.info("[FSM] %s → %s", self._state.name, new_state.name)
+            logger.info("[FSM] %s -> %s", self._state.name, new_state.name)
             self._state = new_state
 
     # ── Shutdown ─────────────────────────────────────────────────
@@ -403,7 +403,7 @@ class AgentOrchestrator:
         self._running = False
 
     def _shutdown(self) -> None:
-        logger.info("[Orchestrator] Shutting down …")
+        logger.info("[Orchestrator] Shutting down ...")
         self._motors.stop()
         self._gimbal.centre()
         self._camera.close()

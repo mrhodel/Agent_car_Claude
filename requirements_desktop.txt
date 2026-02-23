@@ -1,0 +1,26 @@
+# ── Desktop training requirements (Windows / Linux / macOS) ──────
+# Install PyTorch with CUDA first (see setup_desktop.bat / setup_desktop.sh)
+# then install this file:
+#   pip install -r requirements_desktop.txt
+
+# Core
+numpy>=1.24
+pyyaml>=6.0
+scipy>=1.11
+
+# Computer vision (headless version avoids needing a display)
+opencv-python-headless>=4.8
+
+# Deep learning — installed separately with CUDA, listed here for reference
+# torch>=2.1
+# torchvision>=0.16
+
+# Vision model support
+timm>=0.9
+Pillow>=10.0
+
+# Logging
+tqdm>=4.65
+
+# Testing
+pytest>=7.4

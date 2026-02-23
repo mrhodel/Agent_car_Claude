@@ -18,9 +18,13 @@ env/
 models/*.pt
 models/*.pth
 models/*.onnx
+models/checkpoints/
 logs/
 runs/
 *.log
+
+# Test images / scratch files
+camera_level.jpg
 
 # IDE
 .vscode/
