@@ -151,9 +151,9 @@ class RobotEnv:
             if self._gimbal: self._gimbal.centre()
             # Wall escape: back away if pressed against an obstacle
             if self._us and self._motors:
-                for attempt in range(3):
+                for attempt in range(5):
                     dist = self._us.read_cm()
-                    if dist >= 30.0:
+                    if dist >= 25.0:
                         break
                     logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
                                 attempt + 1, dist)
