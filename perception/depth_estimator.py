@@ -8,7 +8,9 @@ Fallback      : gradient-based proxy using vertical image gradient
                  (faster, ~5 ms, less accurate)
 
 Output: a (16, 16) float32 numpy array, normalised 0-1 where
-        1.0 → furthest and 0.0 → closest / unknown.
+        1.0 -> closest  and  0.0 -> furthest.
+        (MiDaS outputs inverse depth / disparity; min-max normalisation
+         preserves that convention.  Higher value = nearer object.)
 """
 from __future__ import annotations
 

@@ -153,6 +153,9 @@ rl:
     reverse_speed: 30          # lower = fewer cm/step backward (no rear sensor)
     rotate_speed: 45
     gimbal_step_deg: 10
+    # Safety pre-checks for blind directions (robot mode only)
+    spin_180_duration_s: 0.7   # timed spin to face rear before reversing; tune on floor
+    side_depth_close: 0.75     # depth map value (0-1, higher=closer) above which strafe blocked
 
   reward:
     exploration_bonus: 1.0     # per newly-revealed cell

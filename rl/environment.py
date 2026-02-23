@@ -110,6 +110,10 @@ class RobotEnv:
         self._reverse_speed = int(action_cfg.get("reverse_speed", 30))
         self._rotate_speed  = int(action_cfg.get("rotate_speed",  45))
         self._gimbal_step   = float(action_cfg.get("gimbal_step_deg", 10))
+        self._spin_180_dur  = float(action_cfg.get("spin_180_duration_s", 0.7))
+        self._side_depth_close = float(action_cfg.get("side_depth_close", 0.75))
+        # Cache last depth map for side clearance checks
+        self._last_depth_map: np.ndarray = np.full((16, 16), 0.5, dtype=np.float32)
         # No ray_angles needed: ultrasonic is fixed (always forward = 0°)
 
         self._emergency_cm  = float(cfg.get("agent", {}).get(
@@ -304,6 +308,60 @@ class RobotEnv:
         return self._execute_action_sim(action)
 
     def _execute_action_robot(self, action: int) -> bool:
+        # ── Blind-direction safety pre-checks ────────────────────
+        if action == ACT_BACKWARD and self._motors and self._us:
+            # Spin 180 so the forward US now faces the direction we'll reverse into,
+            # execute a forward move (= original backward), then spin 180 back.
+            self._motors.rotate_right(self._rotate_speed)
+            time.sleep(self._spin_180_dur)
+            self._motors.stop()
+            time.sleep(0.1)
+            rear_dist = self._us.read_cm()
+            if rear_dist < self._emergency_cm:
+                logger.info("[Env] Rear check: %.1f cm - cancelling backward", rear_dist)
+                # Spin back to original heading and skip move
+                self._motors.rotate_left(self._rotate_speed)
+                time.sleep(self._spin_180_dur)
+                self._motors.stop()
+                return False
+            # Execute as forward (now facing rear)
+            if self._controller:
+                self._controller.move_action(ACT_FORWARD, self._reverse_speed,
+                                              self._rotate_speed,
+                                              self._strafe_speed,
+                                              self._reverse_speed)
+            time.sleep(0.08)
+            self._motors.stop()
+            time.sleep(0.05)
+            # Spin back to original heading
+            self._motors.rotate_left(self._rotate_speed)
+            time.sleep(self._spin_180_dur)
+            self._motors.stop()
+            time.sleep(0.1)
+            return False
+
+        if action in (ACT_STRAFE_LEFT, ACT_STRAFE_RIGHT) and self._gimbal and self._camera and self._vision:
+            # Pan gimbal 90 deg toward the strafe direction, capture depth,
+            # check centre columns – high value = close object.
+            pan_deg = 80 if action == ACT_STRAFE_RIGHT else -80
+            self._gimbal.move_pan(pan_deg)
+            time.sleep(0.15)
+            frame = self._camera.read()
+            if frame is not None:
+                from perception.vision import VisionPipeline
+                obs = self._vision.process(frame, 400.0)
+                if obs is not None and obs.depth_map is not None:
+                    # Centre 6 columns of the 16x16 depth map
+                    centre = obs.depth_map[:, 5:11].max()
+                    if centre > self._side_depth_close:
+                        logger.info("[Env] Side depth check: %.2f - cancelling strafe", centre)
+                        self._gimbal.move_pan(-pan_deg)
+                        time.sleep(0.1)
+                        return False
+            self._gimbal.move_pan(-pan_deg)  # return gimbal to forward
+            time.sleep(0.1)
+
+        # ── Normal action execution ───────────────────────────────
         if self._controller:
             self._controller.move_action(action, self._base_speed,
                                           self._rotate_speed,
@@ -383,6 +441,8 @@ class RobotEnv:
             frame = self._camera.read()
             if frame is not None:
                 obs_result = self._vision.process(frame, us_dist)
+                if obs_result is not None and obs_result.depth_map is not None:
+                    self._last_depth_map = obs_result.depth_map
 
         return us_dists, obs_result
 
