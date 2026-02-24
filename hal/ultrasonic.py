@@ -52,7 +52,7 @@ class UltrasonicSensor:
         self._last_close_cm: float = self._max_range
         self._last_close_time: float = 0.0
         self._close_hysteresis_cm: float = 25.0  # cm threshold to watch
-        self._close_hysteresis_s:  float = 0.8   # seconds to hold reading
+        self._close_hysteresis_s:  float = 2.0   # seconds to hold reading
 
         if board is not None:
             self._board = board

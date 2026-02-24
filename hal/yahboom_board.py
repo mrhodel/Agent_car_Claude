@@ -245,7 +245,9 @@ class YahboomBoard:
                 raw = None
             if raw is None or raw <= 0:
                 return 400.0
-            return float(raw)
+            # Clamp garbage-high echoes (seen at close range) to max_range
+            # so the blind-spot guard in ultrasonic.py can catch them.
+            return min(float(raw), 400.0)
         elif self._bus:
             return self._i2c_get_distance()
         else:
