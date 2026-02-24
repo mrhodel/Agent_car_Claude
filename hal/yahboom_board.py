@@ -225,12 +225,13 @@ class YahboomBoard:
             try:
                 # Trigger a measurement, then read hi/lo registers (in mm)
                 # 0x1b = distance high byte, 0x1a = distance low byte
+                # Read both bytes in a single I2C transaction to avoid
+                # straddle corruption between two separate reads.
                 self._lib.Ctrl_Ulatist_Switch(1)
                 time.sleep(0.08)
-                hi = self._lib.read_data_array(0x1b, 1)[0]
-                lo = self._lib.read_data_array(0x1a, 1)[0]
-                raw_mm = (hi << 8) | lo
-                raw = raw_mm / 10.0  # convert mm → cm
+                buf = self._lib.read_data_array(0x1a, 2)
+                raw_mm = (buf[1] << 8) | buf[0]
+                raw = raw_mm / 10.0  # convert mm -> cm
             except AttributeError:
                 try:
                     raw = self._lib.Get_Distance()
