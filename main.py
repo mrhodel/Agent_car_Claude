@@ -228,9 +228,18 @@ def motion_test_mode(cfg: dict) -> None:
             motors.stop()
             time.sleep(0.3)
 
-            rating = input("  Result  [p]ass / [f]ail / [s]kip, optional note: ").strip()
-            if not rating:
-                rating = "p"
+            while True:
+                rating = input("  Result  [p]ass / [f]ail / [s]kip / [r]epeat, optional note: ").strip()
+                if not rating:
+                    rating = "p"
+                if rating[0].lower() == "r":
+                    print("  Repeating …")
+                    move_fn(motors)
+                    time.sleep(dur)
+                    motors.stop()
+                    time.sleep(0.3)
+                    continue
+                break
             tag    = rating[0].lower()
             note   = rating[2:].strip() if len(rating) > 1 else ""
             status = {"p": "PASS", "f": "FAIL", "s": "SKIP"}.get(tag, rating)
