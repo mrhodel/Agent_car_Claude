@@ -26,7 +26,7 @@ hal:
     i2c_address: 0x2B          # same expansion board as motors/servos
     max_range_cm: 400
     min_range_cm: 3            # HC-SR04 physical minimum range ~2-3cm actual
-    samples_per_reading: 3     # median filter over N acquisitions
+    samples_per_reading: 1     # median filter over N acquisitions (1=fastest, 3=more stable)
 
   gimbal:
     # Servos driven by the Yahboom expansion board via I2C.
@@ -164,7 +164,7 @@ rl:
     proximity_penalty_scale: -0.5  # ×(1/dist) when dist < 30 cm
     time_step_cost: -0.01
     smooth_motion_bonus: 0.05  # bonus for continuing same translational direction
-    spin_penalty: -0.1         # per-step penalty for sustained rotation (after 2 consecutive rotate actions)
+    spin_penalty: -0.02        # per-step penalty for sustained rotation/strafe (after 2 consecutive)
 
   ppo:
     learning_rate: 3.0e-4
@@ -177,6 +177,7 @@ rl:
     batch_size: 64
     rollout_steps: 512         # sim training
     hardware_rollout_steps: 64  # robot training (update ~every 1 min of real movement)
+    vision_every_n_steps: 3    # run MiDaS depth only every N steps (saves ~600ms/step on Pi CPU)
     hidden_dim: 256
     max_steps_per_episode: 500  # cap episode length during training
     checkpoint_dir: models/checkpoints

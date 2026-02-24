@@ -272,14 +272,12 @@ class RobotEnv:
         else:
             parts.append(np.zeros(self._feat_dim, dtype=np.float32))
 
-        # Depth map (flat)
-        if obs_result is not None:
-            dm = obs_result.depth_map.flatten()[:self._depth_flat]
-            dm_pad = np.zeros(self._depth_flat, dtype=np.float32)
-            dm_pad[:len(dm)] = dm
-            parts.append(dm_pad)
-        else:
-            parts.append(np.full(self._depth_flat, 0.5, dtype=np.float32))
+        # Depth map (flat) — use cached map on vision-skipped steps
+        dm_src = obs_result.depth_map if obs_result is not None else self._last_depth_map
+        dm = dm_src.flatten()[:self._depth_flat]
+        dm_pad = np.zeros(self._depth_flat, dtype=np.float32)
+        dm_pad[:len(dm)] = dm
+        parts.append(dm_pad)
 
         # Local map window
         if self._grid:
@@ -412,7 +410,11 @@ class RobotEnv:
     # ── Sensing ───────────────────────────────────────────────────
 
     def _sense(self):
-        """Collect sensor readings and run vision pipeline."""
+        """Collect sensor readings and run vision pipeline.
+        
+        Vision (MiDaS depth) is expensive on Pi CPU (~600ms). We run it every
+        `vision_every_n_steps` steps and reuse the cached depth map otherwise.
+        """
         # Ultrasonic: single fixed forward reading (sensor does NOT sweep)
         if self._mode == "robot" and self._us:
             us_dist = self._us.read_cm()
@@ -424,12 +426,14 @@ class RobotEnv:
         us_dists = [us_dist]   # 1-element list; shape matches self._n_rays == 1
 
         obs_result = None
+        vision_interval = int(self._cfg.get("rl", {}).get("vision_every_n_steps", 3))
         if self._camera and self._vision:
-            frame = self._camera.read()
-            if frame is not None:
-                obs_result = self._vision.process(frame, us_dist)
-                if obs_result is not None and obs_result.depth_map is not None:
-                    self._last_depth_map = obs_result.depth_map
+            if (self._step_count % vision_interval) == 0:
+                frame = self._camera.read()
+                if frame is not None:
+                    obs_result = self._vision.process(frame, us_dist)
+                    if obs_result is not None and obs_result.depth_map is not None:
+                        self._last_depth_map = obs_result.depth_map
 
         return us_dists, obs_result
 
