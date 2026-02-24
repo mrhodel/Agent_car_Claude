@@ -263,7 +263,7 @@ def motion_test_mode(cfg: dict) -> None:
     print(f"\n{passed} passed, {failed} failed, {skipped} skipped out of {len(MOVES)} moves.")
 
 
-
+def test_mode(cfg: dict) -> None:
     """Hardware self-test: move each component briefly."""
     from hal import MotorController, UltrasonicSensor, Gimbal, Camera
     import time
