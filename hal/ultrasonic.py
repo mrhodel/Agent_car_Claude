@@ -46,6 +46,14 @@ class UltrasonicSensor:
         self._n_samples = int(cfg.get("samples_per_reading", 3))
         self._sim_distance = 200.0   # cm, default simulation value
 
+        # Close-range blind-spot guard: sensor returns max_range (invalid)
+        # for objects < ~7 cm.  Track the last valid close reading so a
+        # sudden jump to 400 doesn't look like a clear path.
+        self._last_close_cm: float = self._max_range
+        self._last_close_time: float = 0.0
+        self._close_hysteresis_cm: float = 25.0  # cm threshold to watch
+        self._close_hysteresis_s:  float = 0.8   # seconds to hold reading
+
         if board is not None:
             self._board = board
             logger.info("[Ultrasonic] Shared board, max_range=%.0f cm", self._max_range)
@@ -64,18 +72,33 @@ class UltrasonicSensor:
 
         The sensor is fixed on the chassis and always measures forward.
         Multiple samples are averaged to reduce noise.
+
+        Minimum reliable range is ~7 cm; below that the sensor returns
+        max_range (hardware limitation).  A hysteresis guard substitutes
+        the last valid close reading when this happens.
         """
         samples: List[float] = []
         for _ in range(self._n_samples):
             d = self._board.get_distance()
-            if self._min_range <= d <= self._max_range:
+            if self._min_range <= d < self._max_range:
                 samples.append(d)
             time.sleep(0.01)   # 10 ms between acquisitions
 
         if not samples:
-            return self._max_range   # no valid readings → assume clear
+            # All readings were max_range (out-of-range OR below 7 cm blind spot).
+            # If we had a recent close reading, the object is still there.
+            if (self._last_close_cm < self._close_hysteresis_cm and
+                    time.time() - self._last_close_time < self._close_hysteresis_s):
+                logger.debug("[Ultrasonic] Blind-spot guard: returning %.1f cm",
+                             self._last_close_cm)
+                return self._last_close_cm
+            return self._max_range
 
-        return statistics.median(samples)
+        result = statistics.median(samples)
+        if result < self._close_hysteresis_cm:
+            self._last_close_cm  = result
+            self._last_close_time = time.time()
+        return result
 
     def set_sim_distance(self, cm: float) -> None:
         """

@@ -232,7 +232,10 @@ class YahboomBoard:
                 hi = self._lib.read_data_array(0x1b, 1)[0]
                 lo = self._lib.read_data_array(0x1a, 1)[0]
                 raw_mm = (hi << 8) | lo
-                raw = raw_mm / 20.0  # unit is 0.5 mm -> cm
+                # Empirical calibration: raw unit ~0.474 mm (not 0.5 mm).
+                # Measured at known distances: actual = raw_mm / 9.5
+                # (raw_mm / 20 * 2.11 ~ raw_mm / 9.48, rounded to 9.5)
+                raw = raw_mm / 9.5  # cm
             except AttributeError:
                 try:
                     raw = self._lib.Get_Distance()
