@@ -88,11 +88,12 @@ class UltrasonicSensor:
 
         if not samples:
             # All readings were rejected.  Two distinct failure modes:
-            # (a) d == 0  → sensor blind spot; object IS there, very close.
+            # (a) d < min_range → sensor blind spot (returns 0 or other sub-min
+            #     garbage); object IS there, very close.
             #     Return min_range as a proxy for "closer than measurable".
             # (b) d >= max_range → nothing detected, or hardware error.
             #     Fall back to hysteresis / max_range.
-            if any(d == 0.0 for d in raw):
+            if any(d < self._min_range for d in raw):
                 close_proxy = self._min_range
                 self._last_close_cm   = close_proxy
                 self._last_close_time = time.time()
