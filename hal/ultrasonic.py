@@ -78,18 +78,31 @@ class UltrasonicSensor:
         the last valid close reading when this happens.
         """
         samples: List[float] = []
+        raw: List[float] = []
         for _ in range(self._n_samples):
             d = self._board.get_distance()
+            raw.append(d)
             if self._min_range <= d < self._max_range:
                 samples.append(d)
             time.sleep(0.01)   # 10 ms between acquisitions
 
         if not samples:
-            # All readings were max_range (out-of-range OR below 7 cm blind spot).
-            # If we had a recent close reading, the object is still there.
+            # All readings were rejected.  Two distinct failure modes:
+            # (a) d == 0  → sensor blind spot; object IS there, very close.
+            #     Return min_range as a proxy for "closer than measurable".
+            # (b) d >= max_range → nothing detected, or hardware error.
+            #     Fall back to hysteresis / max_range.
+            if any(d == 0.0 for d in raw):
+                close_proxy = self._min_range
+                self._last_close_cm   = close_proxy
+                self._last_close_time = time.time()
+                logger.debug("[Ultrasonic] Blind-spot: returning min_range %.1f cm",
+                             close_proxy)
+                return close_proxy
+            # Hysteresis: if we recently saw something close, it's still there.
             if (self._last_close_cm < self._close_hysteresis_cm and
                     time.time() - self._last_close_time < self._close_hysteresis_s):
-                logger.debug("[Ultrasonic] Blind-spot guard: returning %.1f cm",
+                logger.debug("[Ultrasonic] Hysteresis: returning %.1f cm",
                              self._last_close_cm)
                 return self._last_close_cm
             return self._max_range
