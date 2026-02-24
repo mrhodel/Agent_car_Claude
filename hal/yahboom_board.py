@@ -244,9 +244,7 @@ class YahboomBoard:
             except Exception:
                 raw = None
             if raw is None or raw <= 0:
-                return 400.0
-            # Clamp garbage-high echoes (seen at close range) to max_range
-            # so the blind-spot guard in ultrasonic.py can catch them.
+                return 0.0  # raw_mm=0 means sensor in blind spot (too close); 0 is safer than 400
             return min(float(raw), 400.0)
         elif self._bus:
             return self._i2c_get_distance()
