@@ -171,6 +171,7 @@ class YahboomBoard:
                 for mid, val in enumerate([fl, rl, fr, rr], start=0):
                     scaled = int(val * 2.55)
                     self._lib.Ctrl_Muto(mid, scaled)
+                    time.sleep(0.002)  # 2 ms gap so board can process each command
             except AttributeError:
                 try:
                     self._lib.set_motor(fl, fr, rl, rr)
@@ -183,7 +184,9 @@ class YahboomBoard:
                          fl, fr, rl, rr)
 
     def stop_motors(self) -> None:
-        """Halt all wheels immediately."""
+        """Halt all wheels immediately (sent twice to ensure delivery)."""
+        self.set_motors(0, 0, 0, 0)
+        time.sleep(0.02)
         self.set_motors(0, 0, 0, 0)
 
     # ── Public servo API ─────────────────────────────────────────

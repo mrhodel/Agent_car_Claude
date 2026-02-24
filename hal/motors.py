@@ -88,7 +88,8 @@ class MotorController:
     def rotate_right(self,  speed: int = 45) -> None: self.set_velocity(0, 0, -speed / 100)
 
     def stop(self) -> None:
-        self._apply(MotorValues(0, 0, 0, 0))
+        self._current = MotorValues(0, 0, 0, 0)
+        self._board.stop_motors()  # sends zeros twice to ensure all wheels halt
 
     @property
     def current_values(self) -> MotorValues:
