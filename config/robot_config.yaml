@@ -25,7 +25,7 @@ hal:
     i2c_bus: 1
     i2c_address: 0x2B          # same expansion board as motors/servos
     max_range_cm: 400
-    min_range_cm: 16           # HC-SR04 physical blind spot: ~14cm actual; reject readings at boundary
+    min_range_cm: 20           # HC-SR04 physical blind spot confirmed ~16cm; 20cm gives solid margin
     samples_per_reading: 3     # median filter over N acquisitions
 
   gimbal:
@@ -185,7 +185,7 @@ rl:
 agent:
   loop_hz: 10                  # main control loop frequency
   safety:
-    emergency_stop_cm: 20      # unconditional halt if anything < N cm (must be > min_range_cm ~16)
+    emergency_stop_cm: 25      # unconditional halt if anything < N cm (must be > min_range_cm 20)
     low_battery_voltage: 6.8   # volts (if voltage monitor available)
   exploration:
     frontier_min_size: 3       # minimum frontier cells to pursue

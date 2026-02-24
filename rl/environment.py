@@ -159,7 +159,7 @@ class RobotEnv:
             if self._us and self._motors:
                 for attempt in range(5):
                     dist = self._us.read_cm()
-                    if dist >= 25.0:
+                    if dist >= 35.0:
                         break
                     logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
                                 attempt + 1, dist)
