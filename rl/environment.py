@@ -150,7 +150,9 @@ class RobotEnv:
         self._robot_y     = 0.0
         self._robot_theta = 0.0
         self._vx = self._vy = self._omega = 0.0
-        self._step_count  = 0
+        self._step_count         = 0
+        self._prev_action        = -1
+        self._consecutive_rotations = 0
 
         if self._mode == "robot":
             if self._motors: self._motors.stop()
@@ -217,15 +219,21 @@ class RobotEnv:
         nearest_cm = min(us_dists) if us_dists else 200.0
 
         # Reward
-        from rl.reward import RewardCalculator
+        from rl.reward import RewardCalculator, _ROTATE_ACTIONS
         rew_cfg = self._cfg.get("rl", {}).get("reward", {})
+        prev_action = getattr(self, "_prev_action", action)
+        if action in _ROTATE_ACTIONS:
+            self._consecutive_rotations = getattr(self, "_consecutive_rotations", 0) + 1
+        else:
+            self._consecutive_rotations = 0
         reward = RewardCalculator.compute(
             new_explored_cells=new_cells,
             nearest_obstacle_cm=nearest_cm,
             collided=collided,
             action=action,
-            prev_action=getattr(self, "_prev_action", action),
+            prev_action=prev_action,
             cfg=rew_cfg,
+            consecutive_rotations=self._consecutive_rotations,
         )
         self._prev_action = action
 
