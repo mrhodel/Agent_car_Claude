@@ -23,7 +23,7 @@ Usage
 Options
 -------
   --config     Path to robot_config.yaml  [default: config/robot_config.yaml]
-  --mode       run | train | eval | test
+  --mode       run | train | eval | test | motion_test
   --episodes   Number of training episodes
   --hardware   Use real hardware during training (default: sim for train)
   --checkpoint Path to a .pt | .npz weights file to load
@@ -175,7 +175,86 @@ def eval_mode(cfg: dict, args: argparse.Namespace) -> None:
         print(f"  {k}: {v:.3f}")
 
 
-def test_mode(cfg: dict) -> None:
+def motion_test_mode(cfg: dict) -> None:
+    """
+    Interactive motion test: step through every movement direction one at a
+    time, display the expected wheel pattern, run the move for a short burst,
+    then prompt the user to score the result.  A summary is printed at the end.
+
+    Mecanum wheel layout (top view, arrows show roller spin direction):
+         FL ── FR
+         |      |
+         RL ── RR
+    ↑ = forward spin, ↓ = reverse spin, · = stopped
+    """
+    from hal import MotorController
+    import time
+
+    hal_cfg = cfg.get("hal", {})
+    speed   = 50   # % – visible but not aggressive
+    dur     = 1.2  # seconds per burst
+
+    # (label, method_name_or_lambda, expected wheel pattern string)
+    MOVES = [
+        ("Forward",       lambda m: m.move_forward(speed),
+         "FL↑  FR↑\nRL↑  RR↑"),
+        ("Backward",      lambda m: m.move_backward(speed),
+         "FL↓  FR↓\nRL↓  RR↓"),
+        ("Strafe Right",  lambda m: m.strafe_right(speed),
+         "FL↑  FR↓\nRL↓  RR↑"),
+        ("Strafe Left",   lambda m: m.strafe_left(speed),
+         "FL↓  FR↑\nRL↑  RR↓"),
+        ("Rotate Left",   lambda m: m.rotate_left(speed),
+         "FL↓  FR↑\nRL↓  RR↑"),
+        ("Rotate Right",  lambda m: m.rotate_right(speed),
+         "FL↑  FR↓\nRL↑  RR↓"),
+    ]
+
+    motors = MotorController(hal_cfg.get("motor", {}))
+    results = []
+
+    print("\n=== Motion Test ===")
+    print(f"Speed: {speed}%  Duration: {dur}s per move")
+    print("Press Enter to start each move, then rate it.\n")
+
+    try:
+        for label, move_fn, wheel_pattern in MOVES:
+            print(f"─── {label} ───")
+            print(f"Expected wheel pattern:\n{wheel_pattern}")
+            input("  Press Enter to run … ")
+
+            move_fn(motors)
+            time.sleep(dur)
+            motors.stop()
+            time.sleep(0.3)
+
+            rating = input("  Result  [p]ass / [f]ail / [s]kip, optional note: ").strip()
+            if not rating:
+                rating = "p"
+            tag    = rating[0].lower()
+            note   = rating[2:].strip() if len(rating) > 1 else ""
+            status = {"p": "PASS", "f": "FAIL", "s": "SKIP"}.get(tag, rating)
+            results.append((label, status, note))
+            print()
+
+    except KeyboardInterrupt:
+        motors.stop()
+        print("\nAborted.")
+
+    motors.close()
+
+    print("=== Results ===")
+    passed = failed = skipped = 0
+    for label, status, note in results:
+        suffix = f"  ({note})" if note else ""
+        print(f"  {status:<4}  {label}{suffix}")
+        if status == "PASS":   passed  += 1
+        elif status == "FAIL": failed  += 1
+        else:                  skipped += 1
+    print(f"\n{passed} passed, {failed} failed, {skipped} skipped out of {len(MOVES)} moves.")
+
+
+
     """Hardware self-test: move each component briefly."""
     from hal import MotorController, UltrasonicSensor, Gimbal, Camera
     import time
@@ -202,11 +281,17 @@ def test_mode(cfg: dict) -> None:
     print("      OK")
 
     # Ultrasonic
-    print("[3/4] Ultrasonic test …")
+    print("[3/4] Ultrasonic test … (Ctrl+C to stop)")
     us = UltrasonicSensor(hal_cfg.get("ultrasonic", {}))
-    dist = us.read_cm()
+    try:
+        while True:
+            dist = us.read_cm()
+            print(f"\r      Distance: {dist:6.1f} cm    ", end="", flush=True)
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print()
     us.close()
-    print(f"      Distance: {dist:.1f} cm")
+    print("      OK")
 
     # Camera
     print("[4/4] Camera test …")
@@ -258,6 +343,8 @@ def main() -> None:
         eval_mode(cfg, args)
     elif args.mode == "test":
         test_mode(cfg)
+    elif args.mode == "motion_test":
+        motion_test_mode(cfg)
 
 
 if __name__ == "__main__":
