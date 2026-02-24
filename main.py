@@ -314,7 +314,7 @@ def main() -> None:
         description="Yahboom Raspbot V2 Autonomous Navigation Agent")
     parser.add_argument("--config",     default="config/robot_config.yaml")
     parser.add_argument("--mode",       default="run",
-                        choices=["run", "train", "eval", "test"])
+                        choices=["run", "train", "eval", "test", "motion_test"])
     parser.add_argument("--episodes",   type=int, default=500)
     parser.add_argument("--hardware",   action="store_true",
                         help="Use real hardware during training")
