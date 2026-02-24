@@ -23,6 +23,7 @@ ACT_STRAFE_RIGHT = 3
 ACT_ROTATE_LEFT  = 4
 ACT_ROTATE_RIGHT = 5
 _ROTATE_ACTIONS  = {ACT_ROTATE_LEFT, ACT_ROTATE_RIGHT}
+_SPINNING_ACTIONS = {ACT_ROTATE_LEFT, ACT_ROTATE_RIGHT, ACT_STRAFE_LEFT, ACT_STRAFE_RIGHT}
 
 
 class RewardCalculator:
@@ -57,20 +58,20 @@ class RewardCalculator:
         # ── Time cost ────────────────────────────────────────────
         r += float(cfg.get("time_step_cost", -0.01))
 
-        # ── Smooth motion bonus (translational moves only) ───────
-        # Bonus for continuing same direction — but NOT for rotations,
-        # which would otherwise reward spinning in place.
+        # ── Smooth motion bonus (translational forward/back only) ─
+        # Bonus for continuing same direction — but NOT for rotations or
+        # strafes, which would otherwise reward spinning/strafing in place.
         smooth_bonus = float(cfg.get("smooth_motion_bonus", 0.05))
-        if action not in _ROTATE_ACTIONS:
+        if action not in _SPINNING_ACTIONS:
             if action == prev_action:
                 r += smooth_bonus * 0.5
             elif _is_reversal(action, prev_action):
                 r -= smooth_bonus
 
-        # ── Sustained rotation penalty ───────────────────────────
-        # Small per-step penalty that grows with consecutive rotations,
-        # discouraging the policy from spinning in place indefinitely.
-        if action in _ROTATE_ACTIONS and consecutive_rotations > 2:
+        # ── Sustained non-forward penalty ────────────────────────
+        # Small per-step penalty that grows with consecutive rotate/strafe,
+        # discouraging the policy from spinning or strafing in place.
+        if action in _SPINNING_ACTIONS and consecutive_rotations > 2:
             spin_penalty = float(cfg.get("spin_penalty", -0.1))
             r += spin_penalty * min(consecutive_rotations - 2, 8)
 

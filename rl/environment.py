@@ -219,10 +219,10 @@ class RobotEnv:
         nearest_cm = min(us_dists) if us_dists else 200.0
 
         # Reward
-        from rl.reward import RewardCalculator, _ROTATE_ACTIONS
+        from rl.reward import RewardCalculator, _SPINNING_ACTIONS
         rew_cfg = self._cfg.get("rl", {}).get("reward", {})
         prev_action = getattr(self, "_prev_action", action)
-        if action in _ROTATE_ACTIONS:
+        if action in _SPINNING_ACTIONS:
             self._consecutive_rotations = getattr(self, "_consecutive_rotations", 0) + 1
         else:
             self._consecutive_rotations = 0
@@ -347,27 +347,6 @@ class RobotEnv:
             self._motors.stop()
             time.sleep(0.1)
             return False
-
-        if action in (ACT_STRAFE_LEFT, ACT_STRAFE_RIGHT) and self._gimbal and self._camera and self._vision:
-            # Pan gimbal 90 deg toward the strafe direction, capture depth,
-            # check centre columns – high value = close object.
-            pan_deg = 80 if action == ACT_STRAFE_RIGHT else -80
-            self._gimbal.move_pan(pan_deg)
-            time.sleep(0.15)
-            frame = self._camera.read()
-            if frame is not None:
-                from perception.vision import VisionPipeline
-                obs = self._vision.process(frame, 400.0)
-                if obs is not None and obs.depth_map is not None:
-                    # Centre 6 columns of the 16x16 depth map
-                    centre = obs.depth_map[:, 5:11].max()
-                    if centre > self._side_depth_close:
-                        logger.info("[Env] Side depth check: %.2f - cancelling strafe", centre)
-                        self._gimbal.move_pan(-pan_deg)
-                        time.sleep(0.1)
-                        return False
-            self._gimbal.move_pan(-pan_deg)  # return gimbal to forward
-            time.sleep(0.1)
 
         # ── Normal action execution ───────────────────────────────
         if self._controller:
