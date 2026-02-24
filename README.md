@@ -111,6 +111,28 @@ python main.py --mode test
 
 This exercises motors, gimbal, ultrasonic, and camera in sequence.
 
+**Interactive motion test** — steps through all six Mecanum movement directions
+one at a time with a prompt to rate each result:
+
+```bash
+python main.py --mode motion_test
+```
+
+| Key | Result |
+|-----|--------|
+| `p` | Pass |
+| `f` | Fail (add a note after a space, e.g. `f FL not stopping`) |
+| `s` | Skip |
+| `r` | Repeat the move |
+
+**Ultrasonic calibration notes:**
+
+- HC-SR04 physical minimum range is ~3–4 cm; readings below that return 0
+  from the board, which `ultrasonic.py` maps to `min_range_cm` (3 cm) so the
+  emergency stop still fires correctly.
+- Empirical calibration factor: raw register value ÷ 9.5 = cm
+  (the board reports in ~0.474 mm units, not the nominal 0.5 mm).
+
 ### 3 · Train on Windows (GPU, recommended)
 
 Recommended workflow: train in simulation on a Windows PC with NVIDIA GPU
@@ -183,7 +205,44 @@ python main.py --mode train --episodes 20 --hardware \
 ```
 
 Place the robot in a clear ~2 m × 2 m area. The emergency stop fires
-automatically if the ultrasonic reads < 10 cm.
+automatically if the ultrasonic reads < 15 cm.
+
+**Continuing hardware fine-tuning from a later checkpoint:**
+```bash
+python main.py --mode train --episodes 20 --hardware \
+               --checkpoint models/checkpoints/policy_ep20.pt
+```
+
+### How sim and hardware training relate
+
+Training is **purely sequential and cumulative** — each phase picks up exactly
+where the last one left off:
+
+```
+Sim training (Windows GPU, e.g. 1500 ep)
+    → saves policy_ep1500.pt        ← neural-net weights only
+         │  --checkpoint
+         ▼
+HW fine-tuning (Pi, e.g. 20 ep)
+    → loads those weights, runs PPO gradient updates on real hardware
+    → saves policy_ep10.pt, policy_ep20.pt  (weights updated in-place)
+         │  --checkpoint
+         ▼
+Next HW run
+    → loads ep20 and continues fine-tuning
+```
+
+Key points:
+
+- A checkpoint is **just the neural-net weights** — no memory of which phase
+  produced it. PPO simply continues gradient descent from that starting point.
+- Sim training gives the policy a strong base (obstacle avoidance, exploration
+  reward signal) before it ever touches real hardware.
+- Hardware fine-tuning adapts the weights to real-world sensor noise, motor
+  response, and lighting. Noisy execution during early HW runs adds gradient
+  variance but does not systematically corrupt the sim base.
+- There is no mixing or blending — later checkpoints always supersede earlier
+  ones for the same run.
 
 ### 5 · Run autonomously
 
@@ -201,11 +260,16 @@ python main.py --mode run --checkpoint models/checkpoints/policy_ep1500.pt
 **`torch.cuda.is_available()` returns `False`**
 → Wrong wheel installed. Reinstall with the correct `cu126` index URL above.
 
-**Only rear wheels move**
-→ Motor IDs are 0-based (0=FL, 1=RL, 2=FR, 3=RR). Check `hal/yahboom_board.py` uses `start=0`.
+**Only rear wheels move / one wheel keeps running after stop**
+→ The Yahboom board needs a small gap between `Ctrl_Muto` calls and repeated
+  stop commands. `stop_motors()` in `hal/yahboom_board.py` sends zeros to all
+  four motors three times (at 0 ms, 30 ms, 60 ms) to guarantee delivery.
+  Motor IDs are 0-based (0=FL, 1=RL, 2=FR, 3=RR).
 
 **Ultrasonic always reads 400 cm**
-→ `Ctrl_Ulatist_Switch(1)` must be called before reading. Check `hal/yahboom_board.py` `get_distance()`.
+→ `Ctrl_Ulatist_Switch(1)` must be called before reading registers 0x1b/0x1a.
+  Check `hal/yahboom_board.py` `get_distance()`. If readings are ~2× too low,
+  the divisor should be 9.5 (empirically calibrated), not 20.0.
 
 ---
 
