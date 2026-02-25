@@ -48,12 +48,34 @@ _INDEX_HTML = b"""\
     <title>Robot Camera</title>
     <style>
       body  { background:#111; margin:0; display:flex; justify-content:center;
-              align-items:center; height:100vh; }
-      img   { max-width:100%; border:2px solid #444; }
+              align-items:center; height:100vh; flex-direction:column; }
+      img   { max-width:100%; border:2px solid #444; display:block; }
+      #info { color:#888; font-family:monospace; font-size:12px; margin-top:6px; }
     </style>
   </head>
   <body>
-    <img src="/stream" alt="MJPEG stream">
+    <img id="cam" src="/frame" alt="camera">
+    <div id="info">connecting...</div>
+    <script>
+      var fps = 0, last = Date.now(), frames = 0;
+      function refresh() {
+        var img = new Image();
+        img.onload = function() {
+          document.getElementById('cam').src = img.src;
+          frames++;
+          var now = Date.now();
+          if (now - last >= 1000) {
+            fps = Math.round(frames * 1000 / (now - last));
+            document.getElementById('info').textContent = fps + ' fps';
+            frames = 0; last = now;
+          }
+          setTimeout(refresh, 80);   // ~12 fps display refresh
+        };
+        img.onerror = function() { setTimeout(refresh, 500); };
+        img.src = '/frame?' + Date.now();   // cache-bust each request
+      }
+      refresh();
+    </script>
   </body>
 </html>
 """
@@ -71,9 +93,12 @@ class _StreamHandler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self) -> None:
-        if self.path == "/":
+        path = self.path.split("?")[0]   # strip cache-bust query string
+        if path == "/":
             self._serve_index()
-        elif self.path == "/stream":
+        elif path == "/frame":
+            self._serve_frame()
+        elif path == "/stream":
             self._serve_mjpeg()
         else:
             self.send_error(404)
@@ -84,6 +109,20 @@ class _StreamHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(_INDEX_HTML)))
         self.end_headers()
         self.wfile.write(_INDEX_HTML)
+
+    def _serve_frame(self) -> None:
+        """Serve the latest frame as a single JPEG (polled by JS)."""
+        with _state_lock:
+            data = _jpeg_bytes
+        if data is None:
+            self.send_error(503, "No frame yet")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type",   "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control",  "no-store")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _serve_mjpeg(self) -> None:
         self.send_response(200)
