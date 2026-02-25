@@ -54,27 +54,33 @@ _INDEX_HTML = b"""\
     </style>
   </head>
   <body>
-    <!-- MJPEG: single persistent connection, no per-frame HTTP overhead -->
-    <img id="cam" src="/stream" alt="camera"
-         onerror="document.getElementById('info').textContent='stream error - retrying';
-                  setTimeout(()=>{document.getElementById('cam').src='/stream?t='+Date.now();},2000)">
-    <div id="info">
-      <script>
-        // fps counter: counts paint events on the img element
-        var fps=0,frames=0,last=Date.now();
-        var img=document.getElementById('cam');
-        img.addEventListener('load',function(){
-          frames++;
-          var now=Date.now();
-          if(now-last>=1000){
-            fps=Math.round(frames*1000/(now-last));
-            document.getElementById('info').textContent=fps+' fps';
-            frames=0;last=now;
-          }
-        });
-      </script>
-      connecting...
-    </div>
+    <img id="cam" src="/stream" alt="camera" onerror="reconnect()">
+    <div id="info">connecting...</div>
+    <script>
+      var frames=0, last=Date.now(), lastLoad=Date.now();
+      var img = document.getElementById('cam');
+      function reconnect() {
+        img.src = '/stream?t=' + Date.now();
+      }
+      img.addEventListener('load', function() {
+        frames++;
+        lastLoad = Date.now();
+        var now = Date.now();
+        if (now - last >= 1000) {
+          document.getElementById('info').textContent =
+            Math.round(frames*1000/(now-last)) + ' fps';
+          frames = 0; last = now;
+        }
+      });
+      // Watchdog: reconnect if no frame arrives for 3s
+      setInterval(function() {
+        if (Date.now() - lastLoad > 3000) {
+          document.getElementById('info').textContent = 'reconnecting...';
+          reconnect();
+          lastLoad = Date.now();
+        }
+      }, 1000);
+    </script>
   </body>
 </html>
 """
