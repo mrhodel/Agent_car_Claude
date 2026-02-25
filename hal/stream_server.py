@@ -109,7 +109,9 @@ class _StreamHandler(BaseHTTPRequestHandler):
                 try:
                     self.wfile.write(
                         b"--mjpegframe\r\n"
-                        b"Content-Type: image/jpeg\r\n\r\n"
+                        b"Content-Type: image/jpeg\r\n"
+                        + f"Content-Length: {len(data)}\r\n".encode()
+                        + b"\r\n"
                         + data
                         + b"\r\n"
                     )
