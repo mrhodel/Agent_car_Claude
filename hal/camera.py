@@ -88,9 +88,6 @@ class Camera:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                 cap.set(cv2.CAP_PROP_FPS, self._fps)
-                # CAP_PROP_BUFFERSIZE is silently ignored on many V4L2 builds;
-                # we drain stale frames manually instead (see _grab_frame).
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 self._cap = cap
                 self._device = found_index  # update so logs are accurate
                 logger.info("[Camera] USB /dev/video%d  %dx%d @ %d fps",
@@ -169,10 +166,6 @@ class Camera:
     def _capture_loop(self) -> None:
         """Sole caller of cap.read(). Runs at camera fps to keep V4L2 buffer
         drained without overwhelming the USB camera driver."""
-        # Drain any pre-buffered frames before the first stored read.
-        if self._driver == "usb" and self._cap:
-            for _ in range(5):
-                self._cap.read()
         interval = 1.0 / max(self._fps, 1)
         while self._running:
             t0 = time.monotonic()
@@ -199,7 +192,7 @@ class Camera:
             # Called only from _capture_loop (single thread) so no lock needed.
             ret, frame = self._cap.read()
             if not ret:
-                logger.warning("[Camera] cap.read() returned False")
+                logger.debug("[Camera] cap.read() returned False")
             return frame if ret else None
 
         else:  # simulation
