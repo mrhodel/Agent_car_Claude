@@ -484,8 +484,11 @@ class AgentOrchestrator:
                     )
                     self._streamer.push_frame(annotated)
                     self._stream_frame_count += 1
-            except Exception:
-                pass  # never crash the stream thread
+                else:
+                    logger.debug("[Stream] camera.read() returned None (f=%d)",
+                                 self._stream_frame_count)
+            except Exception as exc:
+                logger.warning("[Stream] loop exception: %s", exc, exc_info=True)
             elapsed = time.monotonic() - t0
             rem = interval - elapsed
             if rem > 0:
