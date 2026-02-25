@@ -71,6 +71,11 @@ class Camera:
             for idx in range(self._device, self._device + _scan_range):
                 c = cv2.VideoCapture(idx)
                 if c.isOpened():
+                    # Configure BEFORE the first read so V4L2 doesn't need to
+                    # reconfigure mid-stream (which causes frozen frames).
+                    c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
+                    c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+                    c.set(cv2.CAP_PROP_FPS, self._fps)
                     # Verify it can actually produce a frame (rules out dummy devices)
                     ok, _ = c.read()
                     if ok:
@@ -85,9 +90,6 @@ class Camera:
                 if cap:
                     cap.release()
             else:
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
-                cap.set(cv2.CAP_PROP_FPS, self._fps)
                 self._cap = cap
                 self._device = found_index  # update so logs are accurate
                 logger.info("[Camera] USB /dev/video%d  %dx%d @ %d fps",
