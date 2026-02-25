@@ -192,8 +192,9 @@ agent:
     low_battery_voltage: 6.8   # volts (if voltage monitor available)
   exploration:
     frontier_min_size: 3       # minimum frontier cells to pursue
-    rescan_interval_s: 5.0     # full gimbal sweep period
+    rescan_interval_s: 5.0     # full gimbal sweep period (suppressed during EXECUTE)
     gimbal_scan_steps: 9       # pan positions during sweep
+    max_execute_s: 8.0         # max seconds in EXECUTE before timing out to EXPLORE
   logging:
     level: INFO                # DEBUG | INFO | WARNING
     log_dir: logs/

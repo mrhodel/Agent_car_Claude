@@ -155,6 +155,8 @@ class AgentOrchestrator:
         self._ep_steps     = 0
         self._rl_state: Optional[np.ndarray] = None
         self._spin_count   = 0  # consecutive spinning actions for run-mode guard
+        self._execute_start_t = 0.0  # monotonic time when EXECUTE last started
+        self._max_execute_s   = float(self._exp_cfg.get("max_execute_s", 8.0))
 
         # ── Live MJPEG stream ─────────────────────────────────────
         cam_cfg = hal_cfg.get("camera", {})
@@ -168,6 +170,7 @@ class AgentOrchestrator:
         self._last_reward      = 0.0
         self._last_ep_total    = 0.0
         self._last_frame: Optional[np.ndarray] = None
+        self._stream_frame_count = 0  # incremented each push; visible in overlay as liveness check
 
         # Register shutdown hooks
         signal.signal(signal.SIGINT,  self._shutdown_handler)
@@ -253,7 +256,10 @@ class AgentOrchestrator:
         )
 
         # Periodic gimbal scan (camera-only sweep; US is fixed)
-        if time.monotonic() - self._last_scan_t > self._rescan_iv:
+        # Suppress during EXECUTE — scanning while following a path is unsafe
+        # and the pose mismatch means we can't use the data anyway.
+        if (self._state != AgentState.EXECUTE
+                and time.monotonic() - self._last_scan_t > self._rescan_iv):
             logger.info("[Scan] Periodic gimbal sweep (camera coverage, US is fixed forward)")
             self._full_scan()
 
@@ -280,8 +286,10 @@ class AgentOrchestrator:
                 self._last_frame, us_dist,
                 self._last_action_name, self._last_reward,
                 self._last_ep_total, self._ep_steps,
+                self._stream_frame_count,
             )
             self._streamer.push_frame(annotated)
+            self._stream_frame_count += 1
 
     # ── FSM handlers ─────────────────────────────────────────────
 
@@ -396,6 +404,7 @@ class AgentOrchestrator:
 
         self._current_path = path
         self._controller.reset_recovery()
+        self._execute_start_t = time.monotonic()
         logger.info("[FSM] A* path planned  waypoints=%d  len=%.1f m",
                      path.n_cells, path.length_m)
         self._transition(AgentState.EXECUTE)
@@ -422,10 +431,16 @@ class AgentOrchestrator:
             logger.info("[FSM] Path goal reached – back to EXPLORE")
             self._current_path = None
             self._transition(AgentState.EXPLORE)
-        elif nearest_cm < 20:
+        elif nearest_cm < 30:
             logger.warning("[FSM] Obstacle during execution – RECOVER  nearest=%.1f cm", nearest_cm)
             self._motors.stop()
             self._transition(AgentState.RECOVER)
+        elif time.monotonic() - self._execute_start_t > self._max_execute_s:
+            logger.info("[FSM] EXECUTE timeout (%.0fs) – back to EXPLORE",
+                        self._max_execute_s)
+            self._motors.stop()
+            self._current_path = None
+            self._transition(AgentState.EXPLORE)
 
     def _handle_recover(self) -> None:
         us_dist = self._us.read_cm()
@@ -490,6 +505,7 @@ class AgentOrchestrator:
         reward: float,
         ep_total: float,
         ep_steps: int,
+        frame_count: int = 0,
     ) -> np.ndarray:
         """Return a copy of *frame* with a HUD overlay showing live stats."""
         import cv2
@@ -526,7 +542,7 @@ class AgentOrchestrator:
                     font, 0.52, (0, 220, 60), 1, cv2.LINE_AA)
         cv2.putText(out, f"r: {reward:+.3f}   ep: {ep_total:+.2f}", (6, h - 12),
                     font, 0.52, (220, 220, 0), 1, cv2.LINE_AA)
-        cv2.putText(out, f"step {ep_steps}", (w - 100, h - 12),
+        cv2.putText(out, f"s{ep_steps} f{frame_count}", (w - 110, h - 12),
                     font, 0.52, (180, 180, 180), 1, cv2.LINE_AA)
 
         return out
