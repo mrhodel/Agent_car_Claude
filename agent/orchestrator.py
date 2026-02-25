@@ -165,11 +165,11 @@ class AgentOrchestrator:
             self._streamer = MJPEGStreamer(
                 port=int(cam_cfg.get("stream_port", 8080)))
             self._streamer.start()
-        # Overlay state — updated each explore step for stream annotation
+        # Overlay state — updated each tick; read by the stream thread
         self._last_action_name = "—"
         self._last_reward      = 0.0
         self._last_ep_total    = 0.0
-        self._last_frame: Optional[np.ndarray] = None
+        self._last_us_dist     = 0.0
         self._stream_frame_count = 0  # incremented each push; visible in overlay as liveness check
 
         # Register shutdown hooks
@@ -194,6 +194,14 @@ class AgentOrchestrator:
         self._running = True
         self._state   = AgentState.INIT
         logger.info("[Orchestrator] Running at %.1f Hz", self._hz)
+
+        # Stream push thread — reads camera buffer at 10fps, independent of
+        # the control loop which may be running at only 1-2Hz due to MiDaS.
+        if self._streamer is not None:
+            import threading
+            stream_thread = threading.Thread(
+                target=self._stream_loop, daemon=True, name="stream-push")
+            stream_thread.start()
 
         while self._running:
             t0 = time.monotonic()
@@ -220,6 +228,7 @@ class AgentOrchestrator:
         us_dist  = self._us.read_cm()
         us_dists = [us_dist]   # 1-element list for downstream consumers
         nearest  = us_dist
+        self._last_us_dist = us_dist  # shared with stream thread for overlay
 
         # Emergency stop – skip if already recovering (let recovery handler run)
         if nearest < self._emergency and self._state != AgentState.RECOVER:
@@ -230,7 +239,6 @@ class AgentOrchestrator:
 
         # Read camera and run vision
         frame = self._camera.read()
-        self._last_frame = frame
         obs_result = None
         if frame is not None:
             obs_result = self._vision.process(frame, us_dist)
@@ -280,16 +288,7 @@ class AgentOrchestrator:
         elif self._state == AgentState.RECOVER:
             self._handle_recover()
 
-        # Push annotated frame to MJPEG stream (no-op if stream disabled)
-        if self._streamer is not None and self._last_frame is not None:
-            annotated = self._draw_overlay(
-                self._last_frame, us_dist,
-                self._last_action_name, self._last_reward,
-                self._last_ep_total, self._ep_steps,
-                self._stream_frame_count,
-            )
-            self._streamer.push_frame(annotated)
-            self._stream_frame_count += 1
+        # (stream push is handled by _stream_loop thread)
 
     # ── FSM handlers ─────────────────────────────────────────────
 
@@ -456,6 +455,41 @@ class AgentOrchestrator:
             self._controller.reset_recovery()    # clear after each successful recovery too
         self._current_path = None
         self._transition(AgentState.EXPLORE)
+
+    # ── Stream push thread ────────────────────────────────────────
+
+    def _stream_loop(self) -> None:
+        """
+        Push annotated camera frames to the MJPEG streamer at ~10fps,
+        completely independent of the control loop speed.
+
+        The camera HAL already maintains a 30fps capture thread; we just
+        read its latest frame and overlay current shared state (action,
+        reward, US dist) which is updated at control-loop speed.
+        """
+        interval = 0.10  # 10 fps stream rate
+        while self._running:
+            t0 = time.monotonic()
+            try:
+                frame = self._camera.read()
+                if frame is not None:
+                    annotated = self._draw_overlay(
+                        frame,
+                        self._last_us_dist,
+                        self._last_action_name,
+                        self._last_reward,
+                        self._last_ep_total,
+                        self._ep_steps,
+                        self._stream_frame_count,
+                    )
+                    self._streamer.push_frame(annotated)
+                    self._stream_frame_count += 1
+            except Exception:
+                pass  # never crash the stream thread
+            elapsed = time.monotonic() - t0
+            rem = interval - elapsed
+            if rem > 0:
+                time.sleep(rem)
 
     # ── Helpers ───────────────────────────────────────────────────
 
