@@ -158,16 +158,19 @@ class RobotEnv:
             if self._gimbal: self._gimbal.centre()
             # Wall escape: back away if pressed against an obstacle
             if self._us and self._motors:
-                for attempt in range(5):
-                    dist = self._us.read_cm()
-                    if dist >= 25.0:
-                        break
-                    logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
-                                attempt + 1, dist)
-                    self._motors.move_backward(40)
-                    time.sleep(0.4)
+                try:
+                    for attempt in range(5):
+                        dist = self._us.read_cm()
+                        if dist >= 25.0:
+                            break
+                        logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
+                                    attempt + 1, dist)
+                        self._motors.move_backward(40)
+                        time.sleep(0.4)
+                        self._motors.stop()
+                        time.sleep(0.15)
+                finally:
                     self._motors.stop()
-                    time.sleep(0.15)
             time.sleep(0.1)
         else:
             self._sim_place_robot()
@@ -329,10 +332,12 @@ class RobotEnv:
                 self._gimbal.move_tilt( step)
             elif action == ACT_TILT_DOWN:
                 self._gimbal.move_tilt(-step)
-        # Brief execution time
-        time.sleep(0.08)
-        if self._motors and action != ACT_STOP:
-            self._motors.stop()
+        # Brief execution time — always stop motors even on interrupt
+        try:
+            time.sleep(0.08)
+        finally:
+            if self._motors and action != ACT_STOP:
+                self._motors.stop()
         return False   # collision detection is done via sensor readings
 
     def _execute_action_sim(self, action: int) -> bool:

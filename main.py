@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
 import sys
 
 import yaml
@@ -125,16 +126,19 @@ def train_mode(cfg: dict, args: argparse.Namespace) -> None:
         agent.load_checkpoint(args.checkpoint)
 
     trainer = Trainer(cfg, env, agent)
-    trainer.train(n_episodes=args.episodes)
-
-    results = trainer.evaluate(n_episodes=10)
-    logging.getLogger().info("Final eval: %s", results)
-
-    if mode == "robot" and motors:
-        motors.stop()
-        motors.close()
-        if camera: camera.close()
-        if gimbal: gimbal.close()
+    try:
+        trainer.train(n_episodes=args.episodes)
+        results = trainer.evaluate(n_episodes=10)
+        logging.getLogger().info("Final eval: %s", results)
+    except (KeyboardInterrupt, SystemExit):
+        logging.getLogger().warning("[Train] Interrupted — stopping hardware")
+    finally:
+        if mode == "robot":
+            if motors:
+                motors.stop()
+                motors.close()
+            if camera: camera.close()
+            if gimbal: gimbal.close()
 
 
 def eval_mode(cfg: dict, args: argparse.Namespace) -> None:
@@ -337,6 +341,9 @@ def main() -> None:
     log_level = (cfg.get("agent", {}).get("logging", {}).get("level", args.log_level)
                  or args.log_level)
     setup_logging(log_level, log_dir)
+
+    # Convert SIGTERM (pkill) into KeyboardInterrupt so finally blocks always run
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
 
     logging.getLogger().info(
         "Yahboom Raspbot V2 Agent  mode=%s  config=%s", args.mode, args.config)
