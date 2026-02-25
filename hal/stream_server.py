@@ -54,31 +54,26 @@ _INDEX_HTML = b"""\
     </style>
   </head>
   <body>
-    <img id="cam" alt="camera">
-    <div id="info">connecting...</div>
+    <img id="cam" src="/frame?t=0" alt="camera">
+    <div id="info">loading...</div>
     <script>
-      var frames=0, last=Date.now(), prevUrl=null;
-      function refresh() {
-        fetch('/frame?t=' + Date.now(), {cache: 'no-store'})
-          .then(function(r) { return r.ok ? r.blob() : null; })
-          .then(function(blob) {
-            if (!blob) { setTimeout(refresh, 200); return; }
-            var url = URL.createObjectURL(blob);
-            document.getElementById('cam').src = url;
-            if (prevUrl) URL.revokeObjectURL(prevUrl);
-            prevUrl = url;
-            frames++;
-            var now = Date.now();
-            if (now - last >= 1000) {
-              document.getElementById('info').textContent =
-                Math.round(frames*1000/(now-last)) + ' fps';
-              frames = 0; last = now;
-            }
-            setTimeout(refresh, 67);  // ~15 fps
-          })
-          .catch(function() { setTimeout(refresh, 500); });
-      }
-      refresh();
+      var frames=0, last=Date.now();
+      var img = document.getElementById('cam');
+      img.onload = function() {
+        frames++;
+        var now = Date.now();
+        if (now - last >= 1000) {
+          document.getElementById('info').textContent =
+            Math.round(frames*1000/(now-last)) + ' fps';
+          frames = 0; last = now;
+        }
+        // Schedule next frame immediately after this one loads
+        img.src = '/frame?t=' + Date.now();
+      };
+      img.onerror = function() {
+        document.getElementById('info').textContent = 'error - retrying';
+        setTimeout(function(){ img.src = '/frame?t=' + Date.now(); }, 500);
+      };
     </script>
   </body>
 </html>
