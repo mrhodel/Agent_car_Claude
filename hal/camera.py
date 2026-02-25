@@ -49,10 +49,7 @@ class Camera:
 
         self._cap     = None   # OpenCV VideoCapture (USB)
         self._picam   = None   # picamera2 instance
-        self._lock    = threading.Lock()
-        self._latest_frame: Optional[np.ndarray] = None
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._lock    = threading.Lock()   # serialises all cap.read() calls
 
         self._init_driver()
 
@@ -91,9 +88,6 @@ class Camera:
                 # CAP_PROP_BUFFERSIZE is silently ignored on many V4L2 builds;
                 # we drain stale frames manually instead (see _grab_frame).
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                # Flush the pre-buffered frames so the first read is live.
-                for _ in range(5):
-                    cap.grab()
                 self._cap = cap
                 self._device = found_index  # update so logs are accurate
                 logger.info("[Camera] USB /dev/video%d  %dx%d @ %d fps",
@@ -123,26 +117,17 @@ class Camera:
         if self._driver == "simulation":
             logger.info("[Camera] Simulation mode  %dx%d", self._width, self._height)
 
-        # Start background capture thread
-        self._running = True
-        self._thread = threading.Thread(target=self._capture_loop,
-                                        daemon=True, name="camera-capture")
-        self._thread.start()
-
     # ── Public API ────────────────────────────────────────────────
 
     def read(self) -> Optional[np.ndarray]:
         """
-        Return the most recent frame as a BGR numpy array (H, W, 3).
-        Returns None if no frame is available yet.
+        Capture and return a fresh frame as a BGR numpy array (H, W, 3).
+        Returns None on failure.  Thread-safe: serialises via self._lock.
         """
-        with self._lock:
-            if self._latest_frame is None:
-                return None
-            return self._latest_frame.copy()
+        return self._grab_frame()
 
     def read_blocking(self, timeout_s: float = 1.0) -> Optional[np.ndarray]:
-        """Block until a frame is available or timeout expires."""
+        """Capture a fresh frame, retrying until one arrives or timeout."""
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             frame = self.read()
@@ -156,28 +141,12 @@ class Camera:
         return self._width, self._height
 
     def close(self) -> None:
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=2.0)
         if self._cap:
             self._cap.release()
         if self._picam:
             self._picam.stop()
             self._picam.close()
         logger.info("[Camera] Closed")
-
-    # ── Background capture loop ───────────────────────────────────
-
-    def _capture_loop(self) -> None:
-        # No sleep: cap.read() blocks until the camera delivers a new frame,
-        # naturally pacing the loop at camera fps while keeping the V4L2
-        # kernel buffer continuously drained. Any sleep here lets stale frames
-        # queue up so callers always see the newest frame.
-        while self._running:
-            frame = self._grab_frame()
-            if frame is not None:
-                with self._lock:
-                    self._latest_frame = frame
 
     def _grab_frame(self) -> Optional[np.ndarray]:
         if self._driver == "picamera2" and self._picam:
@@ -190,9 +159,8 @@ class Camera:
                 return None
 
         elif self._driver == "usb" and self._cap:
-            # cap.read() = grab + retrieve in one call. The capture loop runs
-            # with no sleep so it drains the V4L2 buffer continuously.
-            ret, frame = self._cap.read()
+            with self._lock:
+                ret, frame = self._cap.read()
             return frame if ret else None
 
         else:  # simulation
