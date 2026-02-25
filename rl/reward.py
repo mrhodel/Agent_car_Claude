@@ -8,7 +8,7 @@ Design goals:
   -  Penalise collisions heavily
   -  Penalise lingering near obstacles
   +  Small momentum bonus for repeating same locomotion action
-  -  No reversal penalty — backing away then going forward is DESIRED
+  -  Small backward cost — discourages wall-backing exploit without punishing genuine retreats too harshly
   -  Penalise sustained rotation (discourages spinning in place)
   -  Extra cost for gimbal-only actions (discourage using them as cheap filler)
   -  Small per-step time cost (encourages efficiency)
@@ -72,6 +72,13 @@ class RewardCalculator:
         if action not in _SPINNING_ACTIONS and action not in _GIMBAL_ACTIONS:
             if action == prev_action:
                 r += smooth_bonus * 0.5
+
+        # ── Backward-step cost ───────────────────────────────────────
+        # Small recurring penalty for reversing.  Enough to make backing
+        # into a wall repeatedly unprofitable without blocking short
+        # backward moves used for genuine obstacle avoidance.
+        if action == ACT_BACKWARD:
+            r += float(cfg.get("backward_step_cost", -0.03))
 
         # ── Gimbal-only action extra cost ─────────────────────────
         # Camera pan/tilt gives the policy perceptual info but the policy
