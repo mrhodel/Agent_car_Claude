@@ -165,15 +165,20 @@ class RobotEnv:
             if self._us and self._motors:
                 try:
                     for attempt in range(5):
-                        # Two consecutive readings must both be low to confirm
-                        # a real obstacle (guards against single spurious readings
-                        # at min_range=3 cm from I2C noise / sensor blind-spot).
+                        # Require BOTH readings to be low before escaping.
+                        # A single spurious I2C reading (often 3.0 cm = min_range)
+                        # will be contradicted by the follow-up and suppressed.
                         d1 = self._us.read_cm()
                         time.sleep(0.05)
                         d2 = self._us.read_cm()
-                        dist = min(d1, d2)
-                        if dist >= 25.0:
+                        if d1 >= 25.0 or d2 >= 25.0:
+                            # At least one reading says clear — no real obstacle
+                            if d1 < 25.0 or d2 < 25.0:
+                                logger.debug("[Env] Spurious US reading suppressed"
+                                             " at reset (d1=%.1f d2=%.1f cm)", d1, d2)
                             break
+                        # Both readings confirmed low — real obstacle
+                        dist = max(d1, d2)  # use the less conservative value
                         logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
                                     attempt + 1, dist)
                         self._motors.move_backward(40)
