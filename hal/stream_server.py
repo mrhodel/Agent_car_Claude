@@ -54,38 +54,27 @@ _INDEX_HTML = b"""\
     </style>
   </head>
   <body>
-    <img id="cam" alt="camera">
-    <div id="info">connecting...</div>
-    <script>
-      var fps = 0, frames = 0, last = Date.now();
-      var running = true;
-
-      async function refresh() {
-        if (!running) return;
-        try {
-          // fetch with no-store bypasses ALL browser image caching
-          var r = await fetch('/frame', {cache: 'no-store'});
-          if (r.ok) {
-            var blob = await r.blob();
-            var url  = URL.createObjectURL(blob);
-            var old  = document.getElementById('cam').src;
-            document.getElementById('cam').src = url;
-            if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
-            frames++;
-            var now = Date.now();
-            if (now - last >= 1000) {
-              fps = Math.round(frames * 1000 / (now - last));
-              document.getElementById('info').textContent = fps + ' fps';
-              frames = 0; last = now;
-            }
+    <!-- MJPEG: single persistent connection, no per-frame HTTP overhead -->
+    <img id="cam" src="/stream" alt="camera"
+         onerror="document.getElementById('info').textContent='stream error – retrying';
+                  setTimeout(()=>{document.getElementById('cam').src='/stream?t='+Date.now();},2000)">
+    <div id="info">
+      <script>
+        // fps counter: counts paint events on the img element
+        var fps=0,frames=0,last=Date.now();
+        var img=document.getElementById('cam');
+        img.addEventListener('load',function(){
+          frames++;
+          var now=Date.now();
+          if(now-last>=1000){
+            fps=Math.round(frames*1000/(now-last));
+            document.getElementById('info').textContent=fps+' fps';
+            frames=0;last=now;
           }
-        } catch(e) {
-          document.getElementById('info').textContent = 'error: ' + e;
-        }
-        setTimeout(refresh, 100);
-      }
-      refresh();
-    </script>
+        });
+      </script>
+      connecting...
+    </div>
   </body>
 </html>
 """

@@ -167,18 +167,64 @@ class Camera:
 
     def _capture_loop(self) -> None:
         """Sole caller of cap.read(). Runs at camera fps to keep V4L2 buffer
-        drained without overwhelming the USB camera driver."""
-        interval = 1.0 / max(self._fps, 1)
-        while self._running:
-            t0 = time.monotonic()
-            frame = self._grab_frame()
-            if frame is not None:
-                with self._lock:
-                    self._latest_frame = frame
-            elapsed = time.monotonic() - t0
-            remaining = interval - elapsed
-            if remaining > 0:
-                time.sleep(remaining)
+        drained. Uses a per-read timeout thread so a V4L2 stall can't hang
+        this thread forever — camera is reopened automatically after 3 s."""
+        import concurrent.futures
+        interval   = 1.0 / max(self._fps, 1)
+        stall_secs = 3.0   # reopen if no good frame for this long
+        last_ok    = time.monotonic()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1,
+                                                   thread_name_prefix="cam-read") as ex:
+            while self._running:
+                t0 = time.monotonic()
+
+                # Submit cap.read() to the executor; give it 2× frame interval
+                fut = ex.submit(self._grab_frame)
+                try:
+                    frame = fut.result(timeout=interval * 4)
+                except concurrent.futures.TimeoutError:
+                    frame = None
+                except Exception as exc:
+                    logger.debug("[Camera] grab exception: %s", exc)
+                    frame = None
+
+                if frame is not None:
+                    with self._lock:
+                        self._latest_frame = frame
+                    last_ok = time.monotonic()
+                elif time.monotonic() - last_ok > stall_secs:
+                    logger.warning("[Camera] V4L2 stall detected – reopening")
+                    self._reopen()
+                    last_ok = time.monotonic()
+
+                elapsed   = time.monotonic() - t0
+                remaining = interval - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
+
+    def _reopen(self) -> None:
+        """Release and reopen the USB camera after a stall."""
+        import cv2
+        if self._cap:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+        self._cap = None
+        time.sleep(0.5)
+        c = cv2.VideoCapture(self._device)
+        if c.isOpened():
+            c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
+            c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+            c.set(cv2.CAP_PROP_FPS, self._fps)
+            ok, _ = c.read()
+            if ok:
+                self._cap = c
+                logger.info("[Camera] Reopened /dev/video%d", self._device)
+                return
+            c.release()
+        logger.warning("[Camera] Reopen failed – staying in degraded mode")
 
     def _grab_frame(self) -> Optional[np.ndarray]:
         if self._driver == "picamera2" and self._picam:

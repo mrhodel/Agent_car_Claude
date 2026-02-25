@@ -467,7 +467,7 @@ class AgentOrchestrator:
         read its latest frame and overlay current shared state (action,
         reward, US dist) which is updated at control-loop speed.
         """
-        interval = 0.10  # 10 fps stream rate
+        interval = 0.067  # ~15 fps stream rate
         while self._running:
             t0 = time.monotonic()
             try:
