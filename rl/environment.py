@@ -133,6 +133,8 @@ class RobotEnv:
         self._vx = self._vy = self._omega = 0.0
         self._step_count  = 0
         self._max_steps   = int(rl_cfg.get("ppo", {}).get("max_steps_per_episode", 500))
+        self._consecutive_backward = 0   # stuck-backing-into-wall detector
+        self._last_us_cm           = 400.0
 
         # For simulation mode
         self._sim_obstacles: list = []   # list of (x, y, radius_m)
@@ -149,14 +151,17 @@ class RobotEnv:
         self._robot_y     = 0.0
         self._robot_theta = 0.0
         self._vx = self._vy = self._omega = 0.0
-        self._step_count         = 0
-        self._prev_action        = -1
+        self._step_count            = 0
+        self._prev_action           = -1
         self._consecutive_rotations = 0
+        self._consecutive_backward  = 0
+        self._last_us_cm            = 400.0
 
         if self._mode == "robot":
             if self._motors: self._motors.stop()
             if self._gimbal: self._gimbal.centre()
-            # Wall escape: back away if pressed against an obstacle
+            # Wall escape: back away from front obstacle, then nudge forward
+            # to clear any rear wall the robot may have backed into.
             if self._us and self._motors:
                 try:
                     for attempt in range(5):
@@ -169,6 +174,10 @@ class RobotEnv:
                         time.sleep(0.4)
                         self._motors.stop()
                         time.sleep(0.15)
+                    # Always nudge forward to clear any rear wall
+                    logger.debug("[Env] Reset forward nudge")
+                    self._motors.move_forward(40)
+                    time.sleep(0.3)
                 finally:
                     self._motors.stop()
             time.sleep(0.1)
@@ -239,13 +248,32 @@ class RobotEnv:
         )
         self._prev_action = action
 
+        # ── Stuck-backward detector ───────────────────────────────
+        # If the robot keeps choosing backward and the sensor reading
+        # barely changes (rear wall), the episode is unrecoverable.
+        # Force done so reset() clears it with a forward nudge.
+        if action == ACT_BACKWARD:
+            us_now = us_dists[0] if us_dists else 400.0
+            if abs(us_now - self._last_us_cm) < 3.0:   # sensor not moving
+                self._consecutive_backward += 1
+            else:
+                self._consecutive_backward = 0
+            self._last_us_cm = us_now
+        else:
+            self._consecutive_backward = 0
+
         self._step_count += 1
         # Emergency stop triggers on distance alone (collided is not reliable
         # in robot mode because _execute_action_robot always returns False)
         emergency = nearest_cm < self._emergency_cm
-        done = (emergency or collided
+        stuck_backward = (self._consecutive_backward >= 6
+                          and self._mode == "robot")
+        if stuck_backward:
+            logger.warning("[Env] Stuck backing into wall after %d steps — forcing reset",
+                           self._consecutive_backward)
+        done = (emergency or collided or stuck_backward
                 or self._step_count >= self._max_steps)
-        if emergency and self._mode == "robot" and self._motors:
+        if (emergency or stuck_backward) and self._mode == "robot" and self._motors:
             self._motors.stop()
 
         state = self._get_state(obs_result, us_dists)
@@ -254,6 +282,7 @@ class RobotEnv:
             "new_cells": new_cells,
             "nearest_cm": nearest_cm,
             "collided": collided,
+            "stuck_backward": stuck_backward,
         }
         return state, reward, done, info
 
