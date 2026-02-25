@@ -88,9 +88,12 @@ class Camera:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                 cap.set(cv2.CAP_PROP_FPS, self._fps)
-                # Buffer size 1 = always return the newest frame, not a
-                # stale frame from OpenCV's internal 4-frame queue.
+                # CAP_PROP_BUFFERSIZE is silently ignored on many V4L2 builds;
+                # we drain stale frames manually instead (see _grab_frame).
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                # Flush the pre-buffered frames so the first read is live.
+                for _ in range(5):
+                    cap.grab()
                 self._cap = cap
                 self._device = found_index  # update so logs are accurate
                 logger.info("[Camera] USB /dev/video%d  %dx%d @ %d fps",
@@ -189,11 +192,12 @@ class Camera:
                 return None
 
         elif self._driver == "usb" and self._cap:
-            import cv2
-            # grab() discards the buffered frames and queues the newest;
-            # retrieve() decodes only that one frame.
-            # This avoids reading a stale frame from OpenCV's 4-frame buffer.
-            self._cap.grab()  # discard any queued frames
+            # V4L2 buffers up to 4 frames internally; CAP_PROP_BUFFERSIZE=1
+            # is often ignored.  Drain by grabbing 4 times then retrieving
+            # the last — guarantees we always decode the newest frame.
+            for _ in range(4):
+                if not self._cap.grab():
+                    return None
             ret, frame = self._cap.retrieve()
             return frame if ret else None
 
