@@ -56,7 +56,7 @@ _INDEX_HTML = b"""\
   <body>
     <!-- MJPEG: single persistent connection, no per-frame HTTP overhead -->
     <img id="cam" src="/stream" alt="camera"
-         onerror="document.getElementById('info').textContent='stream error – retrying';
+         onerror="document.getElementById('info').textContent='stream error - retrying';
                   setTimeout(()=>{document.getElementById('cam').src='/stream?t='+Date.now();},2000)">
     <div id="info">
       <script>
