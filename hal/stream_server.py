@@ -86,8 +86,18 @@ _INDEX_HTML = b"""\
 
 
 class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    """HTTPServer that spawns a new thread per client connection."""
+    """HTTPServer with one daemon thread per request, capped at 10 threads.
+    Prevents thread exhaustion from stale polling connections."""
     daemon_threads = True
+
+    def process_request(self, request, client_address):
+        import threading
+        if threading.active_count() > 10:
+            # Too many threads - handle inline rather than spawn a new one
+            self.finish_request(request, client_address)
+            self.shutdown_request(request)
+        else:
+            super().process_request(request, client_address)
 
 
 class _StreamHandler(BaseHTTPRequestHandler):
@@ -102,8 +112,6 @@ class _StreamHandler(BaseHTTPRequestHandler):
             self._serve_index()
         elif path == "/frame":
             self._serve_frame()
-        elif path == "/stream":
-            self._serve_mjpeg()
         else:
             self.send_error(404)
 
@@ -129,42 +137,6 @@ class _StreamHandler(BaseHTTPRequestHandler):
         self.send_header("Expires",        "0")
         self.end_headers()
         self.wfile.write(data)
-
-    def _serve_mjpeg(self) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type",
-                         "multipart/x-mixed-replace; boundary=mjpegframe")
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.send_header("Pragma",        "no-cache")
-        self.send_header("Expires",       "0")
-        self.end_headers()
-
-        try:
-            while True:
-                # Wait up to 2 s for a new frame; loop so we can detect
-                # a closed connection even if frames stop arriving.
-                _frame_event.wait(timeout=2.0)
-                _frame_event.clear()
-
-                with _state_lock:
-                    data = _jpeg_bytes
-                if data is None:
-                    continue
-
-                try:
-                    self.wfile.write(
-                        b"--mjpegframe\r\n"
-                        b"Content-Type: image/jpeg\r\n"
-                        + f"Content-Length: {len(data)}\r\n".encode()
-                        + b"\r\n"
-                        + data
-                        + b"\r\n"
-                    )
-                    self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError):
-                    break   # client disconnected
-        except Exception:
-            pass  # swallow any other transport error silently
 
 
 class MJPEGStreamer:
