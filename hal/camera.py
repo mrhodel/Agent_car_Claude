@@ -88,6 +88,9 @@ class Camera:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                 cap.set(cv2.CAP_PROP_FPS, self._fps)
+                # Buffer size 1 = always return the newest frame, not a
+                # stale frame from OpenCV's internal 4-frame queue.
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 self._cap = cap
                 self._device = found_index  # update so logs are accurate
                 logger.info("[Camera] USB /dev/video%d  %dx%d @ %d fps",
@@ -187,7 +190,11 @@ class Camera:
 
         elif self._driver == "usb" and self._cap:
             import cv2
-            ret, frame = self._cap.read()
+            # grab() discards the buffered frames and queues the newest;
+            # retrieve() decodes only that one frame.
+            # This avoids reading a stale frame from OpenCV's 4-frame buffer.
+            self._cap.grab()  # discard any queued frames
+            ret, frame = self._cap.retrieve()
             return frame if ret else None
 
         else:  # simulation

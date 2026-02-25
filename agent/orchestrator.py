@@ -482,6 +482,17 @@ class AgentOrchestrator:
                         self._ep_steps,
                         self._stream_frame_count,
                     )
+                    # Large centre counter — absolute proof each JPEG is new
+                    import cv2 as _cv2
+                    h, w = annotated.shape[:2]
+                    _cv2.putText(annotated, str(self._stream_frame_count),
+                                 (w // 2 - 40, h // 2 + 20),
+                                 _cv2.FONT_HERSHEY_SIMPLEX, 2.0,
+                                 (0, 0, 0), 6, _cv2.LINE_AA)
+                    _cv2.putText(annotated, str(self._stream_frame_count),
+                                 (w // 2 - 40, h // 2 + 20),
+                                 _cv2.FONT_HERSHEY_SIMPLEX, 2.0,
+                                 (255, 255, 255), 2, _cv2.LINE_AA)
                     self._streamer.push_frame(annotated)
                     self._stream_frame_count += 1
             except Exception:
