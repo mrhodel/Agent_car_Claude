@@ -21,11 +21,21 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections import defaultdict
 from typing import Optional
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+_ACTION_NAMES = {
+    0: "forward",       1: "backward",
+    2: "strafe_left",   3: "strafe_right",
+    4: "rotate_left",   5: "rotate_right",
+    6: "gimbal_pan_l",  7: "gimbal_pan_r",
+    8: "gimbal_tilt_u", 9: "gimbal_tilt_d",
+    10: "stop",
+}
 
 
 class Trainer:
@@ -52,12 +62,18 @@ class Trainer:
         logger.info("[Trainer] Starting training  n_episodes=%d", n_episodes)
         t_start = time.monotonic()
         global_step = 0
+        # Hardware mode: save every episode so a battery death loses at most 1 ep
+        hw_mode = getattr(self._env, '_mode', 'sim') == 'robot'
+        log_every = int(self._cfg.get('rl', {}).get('ppo', {})
+                        .get('vision_every_n_steps', 3)) * 5  # log ~every 15 steps
 
         for episode in range(1, n_episodes + 1):
             state   = self._env.reset()
             ep_reward = 0.0
             ep_length = 0
             done  = False
+            action_counts: dict = defaultdict(int)
+            ep_t = time.monotonic()
 
             while not done:
                 action, log_prob, value = self._agent.select_action(state)
@@ -67,16 +83,39 @@ class Trainer:
                 ep_reward += reward
                 ep_length += 1
                 global_step += 1
+                action_counts[action] += 1
                 state = next_state
+
+                # Per-step diagnostic (DEBUG level — enable with log level=DEBUG)
+                if ep_length % log_every == 0:
+                    aname = _ACTION_NAMES.get(action, str(action))
+                    logger.debug(
+                        "[Train] ep=%d  step=%-4d  action=%-14s  r=%+.3f  ep_R=%+.2f",
+                        episode, ep_length, aname, reward, ep_reward,
+                    )
 
                 # Rollout update
                 if self._agent.ready_to_update():
-                    # Bootstrap value for last state
                     _, _, last_val = self._agent.select_action(state)
                     stats = self._agent.update(last_val if not done else 0.0)
                     self._log_stats(stats, global_step)
 
             self._agent.on_episode_end(ep_reward, ep_length)
+
+            # Per-episode action distribution
+            total_acts = max(1, sum(action_counts.values()))
+            dist_parts = []
+            for act_id in sorted(action_counts):
+                pct = 100.0 * action_counts[act_id] / total_acts
+                dist_parts.append(f"{_ACTION_NAMES.get(act_id, str(act_id))}:{pct:.0f}%")
+            logger.info("[Train] ep=%d  actions  %s",
+                        episode, "  ".join(dist_parts))
+            logger.info("[Train] ep=%d  elapsed=%.0fs",
+                        episode, time.monotonic() - ep_t)
+
+            # Save checkpoint every episode in hardware mode (battery safety)
+            if hw_mode:
+                self._agent.save_checkpoint(f"ep{self._agent._episode}")
 
             if episode % 10 == 0:
                 elapsed = time.monotonic() - t_start
