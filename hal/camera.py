@@ -167,15 +167,23 @@ class Camera:
     # ── Background capture loop ───────────────────────────────────
 
     def _capture_loop(self) -> None:
-        """Sole caller of cap.read(). No lock held during the blocking read;
-        lock is acquired only for the brief _latest_frame assignment."""
+        """Sole caller of cap.read(). Runs at camera fps to keep V4L2 buffer
+        drained without overwhelming the USB camera driver."""
+        # Drain any pre-buffered frames before the first stored read.
+        if self._driver == "usb" and self._cap:
+            for _ in range(5):
+                self._cap.read()
+        interval = 1.0 / max(self._fps, 1)
         while self._running:
+            t0 = time.monotonic()
             frame = self._grab_frame()
             if frame is not None:
                 with self._lock:
                     self._latest_frame = frame
-            else:
-                time.sleep(0.005)  # back-off only on repeated failures
+            elapsed = time.monotonic() - t0
+            remaining = interval - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
 
     def _grab_frame(self) -> Optional[np.ndarray]:
         if self._driver == "picamera2" and self._picam:
