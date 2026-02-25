@@ -183,7 +183,7 @@ class Camera:
                 fail_count = 0
             else:
                 fail_count += 1
-                if fail_count >= 30:
+                if fail_count >= 60:
                     logger.warning("[Camera] V4L2 consecutive failures - reopening")
                     self._reopen()
                     fail_count = 0

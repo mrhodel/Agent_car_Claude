@@ -46,8 +46,8 @@ hal:
     # 'picamera2' is only needed if a CSI module is fitted instead.
     driver: usb                # usb | picamera2 | simulation
     device_index: 0            # USB video device index
-    width: 640
-    height: 480
+    width: 320
+    height: 240
     fps: 15
     auto_exposure: true
     # Optional MJPEG stream for remote monitoring
