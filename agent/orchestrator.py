@@ -153,6 +153,7 @@ class AgentOrchestrator:
         self._ep_reward    = 0.0
         self._ep_steps     = 0
         self._rl_state: Optional[np.ndarray] = None
+        self._spin_count   = 0  # consecutive spinning actions for run-mode guard
 
         # Register shutdown hooks
         signal.signal(signal.SIGINT,  self._shutdown_handler)
@@ -271,6 +272,18 @@ class AgentOrchestrator:
             self._rl_state = self._env.reset()
 
         action, log_prob, value = self._agent.select_action(self._rl_state)
+
+        # Anti-spin guard: if 4+ consecutive spin/strafe actions, force forward
+        _SPIN_ACTIONS = {2, 3, 4, 5}
+        if action in _SPIN_ACTIONS:
+            self._spin_count += 1
+        else:
+            self._spin_count = 0
+        if self._spin_count >= 4:
+            logger.debug("[Explore] Anti-spin override -> forward")
+            action = 0
+            self._spin_count = 0
+
         next_state, reward, done, info = self._env.step(action)
 
         self._agent.store(self._rl_state, action, log_prob, reward, done, value)

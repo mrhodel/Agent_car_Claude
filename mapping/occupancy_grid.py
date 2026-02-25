@@ -233,7 +233,8 @@ class OccupancyGrid:
         frontier_mask = free_mask & unknown_dilated
 
         # Label connected frontier regions
-        labeled, n_labels = cv2.connectedComponents(
+        # cv2.connectedComponents returns (retval, labels) — retval is the count
+        n_labels, labeled = cv2.connectedComponents(
             frontier_mask.astype(np.uint8))
         for label in range(1, n_labels + 1):
             region = np.argwhere(labeled == label)

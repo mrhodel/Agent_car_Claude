@@ -110,7 +110,6 @@ class RobotEnv:
         self._reverse_speed = int(action_cfg.get("reverse_speed", 30))
         self._rotate_speed  = int(action_cfg.get("rotate_speed",  45))
         self._gimbal_step   = float(action_cfg.get("gimbal_step_deg", 10))
-        self._spin_180_dur  = float(action_cfg.get("spin_180_duration_s", 0.7))
         self._side_depth_close = float(action_cfg.get("side_depth_close", 0.75))
         # Cache last depth map for side clearance checks
         self._last_depth_map: np.ndarray = np.full((16, 16), 0.5, dtype=np.float32)
@@ -314,38 +313,6 @@ class RobotEnv:
         return self._execute_action_sim(action)
 
     def _execute_action_robot(self, action: int) -> bool:
-        # ── Blind-direction safety pre-checks ────────────────────
-        if action == ACT_BACKWARD and self._motors and self._us:
-            # Spin 180 so the forward US now faces the direction we'll reverse into,
-            # execute a forward move (= original backward), then spin 180 back.
-            self._motors.rotate_right(self._rotate_speed)
-            time.sleep(self._spin_180_dur)
-            self._motors.stop()
-            time.sleep(0.1)
-            rear_dist = self._us.read_cm()
-            if rear_dist < self._emergency_cm:
-                logger.info("[Env] Rear check: %.1f cm - cancelling backward", rear_dist)
-                # Spin back to original heading and skip move
-                self._motors.rotate_left(self._rotate_speed)
-                time.sleep(self._spin_180_dur)
-                self._motors.stop()
-                return False
-            # Execute as forward (now facing rear)
-            if self._controller:
-                self._controller.move_action(ACT_FORWARD, self._reverse_speed,
-                                              self._rotate_speed,
-                                              self._strafe_speed,
-                                              self._reverse_speed)
-            time.sleep(0.08)
-            self._motors.stop()
-            time.sleep(0.05)
-            # Spin back to original heading
-            self._motors.rotate_left(self._rotate_speed)
-            time.sleep(self._spin_180_dur)
-            self._motors.stop()
-            time.sleep(0.1)
-            return False
-
         # ── Normal action execution ───────────────────────────────
         if self._controller:
             self._controller.move_action(action, self._base_speed,
