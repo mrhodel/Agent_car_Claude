@@ -47,32 +47,42 @@ _INDEX_HTML = b"""\
     <meta charset="utf-8">
     <title>Robot Camera</title>
     <style>
-      body  { background:#111; margin:0; display:flex; justify-content:center;
-              align-items:center; height:100vh; flex-direction:column; }
-      img   { max-width:100%; border:2px solid #444; display:block; }
-      #info { color:#888; font-family:monospace; font-size:12px; margin-top:6px; }
+      body { background:#111; margin:0; display:flex; justify-content:center;
+             align-items:center; height:100vh; flex-direction:column; }
+      img  { max-width:100%; border:2px solid #444; display:block; }
+      #info{ color:#888; font-family:monospace; font-size:12px; margin-top:6px; }
     </style>
   </head>
   <body>
-    <img id="cam" src="/frame" alt="camera">
+    <img id="cam" alt="camera">
     <div id="info">connecting...</div>
     <script>
-      var fps = 0, last = Date.now(), frames = 0;
-      function refresh() {
-        var img = new Image();
-        img.onload = function() {
-          document.getElementById('cam').src = img.src;
-          frames++;
-          var now = Date.now();
-          if (now - last >= 1000) {
-            fps = Math.round(frames * 1000 / (now - last));
-            document.getElementById('info').textContent = fps + ' fps';
-            frames = 0; last = now;
+      var fps = 0, frames = 0, last = Date.now();
+      var running = true;
+
+      async function refresh() {
+        if (!running) return;
+        try {
+          // fetch with no-store bypasses ALL browser image caching
+          var r = await fetch('/frame', {cache: 'no-store'});
+          if (r.ok) {
+            var blob = await r.blob();
+            var url  = URL.createObjectURL(blob);
+            var old  = document.getElementById('cam').src;
+            document.getElementById('cam').src = url;
+            if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+            frames++;
+            var now = Date.now();
+            if (now - last >= 1000) {
+              fps = Math.round(frames * 1000 / (now - last));
+              document.getElementById('info').textContent = fps + ' fps';
+              frames = 0; last = now;
+            }
           }
-          setTimeout(refresh, 80);   // ~12 fps display refresh
-        };
-        img.onerror = function() { setTimeout(refresh, 500); };
-        img.src = '/frame?' + Date.now();   // cache-bust each request
+        } catch(e) {
+          document.getElementById('info').textContent = 'error: ' + e;
+        }
+        setTimeout(refresh, 100);
       }
       refresh();
     </script>
@@ -120,7 +130,9 @@ class _StreamHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type",   "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control",  "no-store")
+        self.send_header("Cache-Control",  "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma",         "no-cache")
+        self.send_header("Expires",        "0")
         self.end_headers()
         self.wfile.write(data)
 
