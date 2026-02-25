@@ -169,17 +169,15 @@ class Camera:
     # ── Background capture loop ───────────────────────────────────
 
     def _capture_loop(self) -> None:
-        interval = 1.0 / self._fps
+        # No sleep: cap.read() blocks until the camera delivers a new frame,
+        # naturally pacing the loop at camera fps while keeping the V4L2
+        # kernel buffer continuously drained. Any sleep here lets stale frames
+        # queue up so callers always see the newest frame.
         while self._running:
-            t0 = time.monotonic()
             frame = self._grab_frame()
             if frame is not None:
                 with self._lock:
                     self._latest_frame = frame
-            elapsed = time.monotonic() - t0
-            remaining = interval - elapsed
-            if remaining > 0:
-                time.sleep(remaining)
 
     def _grab_frame(self) -> Optional[np.ndarray]:
         if self._driver == "picamera2" and self._picam:
@@ -192,13 +190,9 @@ class Camera:
                 return None
 
         elif self._driver == "usb" and self._cap:
-            # V4L2 buffers up to 4 frames internally; CAP_PROP_BUFFERSIZE=1
-            # is often ignored.  Drain by grabbing 4 times then retrieving
-            # the last — guarantees we always decode the newest frame.
-            for _ in range(4):
-                if not self._cap.grab():
-                    return None
-            ret, frame = self._cap.retrieve()
+            # cap.read() = grab + retrieve in one call. The capture loop runs
+            # with no sleep so it drains the V4L2 buffer continuously.
+            ret, frame = self._cap.read()
             return frame if ret else None
 
         else:  # simulation
