@@ -38,6 +38,7 @@ from typing import Optional
 import numpy as np
 
 from hal          import MotorController, UltrasonicSensor, Gimbal, Camera
+from hal.stream_server import MJPEGStreamer
 from perception   import VisionPipeline, SensorFusion
 from mapping      import OccupancyGrid
 from mapping.occupancy_grid import RobotPose
@@ -155,6 +156,19 @@ class AgentOrchestrator:
         self._rl_state: Optional[np.ndarray] = None
         self._spin_count   = 0  # consecutive spinning actions for run-mode guard
 
+        # ── Live MJPEG stream ─────────────────────────────────────
+        cam_cfg = hal_cfg.get("camera", {})
+        self._streamer: Optional[MJPEGStreamer] = None
+        if cam_cfg.get("stream_enabled", False):
+            self._streamer = MJPEGStreamer(
+                port=int(cam_cfg.get("stream_port", 8080)))
+            self._streamer.start()
+        # Overlay state — updated each explore step for stream annotation
+        self._last_action_name = "—"
+        self._last_reward      = 0.0
+        self._last_ep_total    = 0.0
+        self._last_frame: Optional[np.ndarray] = None
+
         # Register shutdown hooks
         signal.signal(signal.SIGINT,  self._shutdown_handler)
         signal.signal(signal.SIGTERM, self._shutdown_handler)
@@ -213,6 +227,7 @@ class AgentOrchestrator:
 
         # Read camera and run vision
         frame = self._camera.read()
+        self._last_frame = frame
         obs_result = None
         if frame is not None:
             obs_result = self._vision.process(frame, us_dist)
@@ -258,6 +273,15 @@ class AgentOrchestrator:
             self._handle_execute(nearest)
         elif self._state == AgentState.RECOVER:
             self._handle_recover()
+
+        # Push annotated frame to MJPEG stream (no-op if stream disabled)
+        if self._streamer is not None and self._last_frame is not None:
+            annotated = self._draw_overlay(
+                self._last_frame, us_dist,
+                self._last_action_name, self._last_reward,
+                self._last_ep_total, self._ep_steps,
+            )
+            self._streamer.push_frame(annotated)
 
     # ── FSM handlers ─────────────────────────────────────────────
 
@@ -315,6 +339,10 @@ class AgentOrchestrator:
             "[Explore] step=%-4d  reward=%+7.3f  ep_total=%+8.3f  done=%s",
             self._ep_steps, reward, self._ep_reward + reward, done,
         )
+        # Update overlay state for stream annotation
+        self._last_action_name = action_name
+        self._last_reward      = reward
+        self._last_ep_total    = self._ep_reward + reward
 
         self._agent.store(self._rl_state, action, log_prob, reward, done, value)
         self._ep_reward += reward
@@ -454,6 +482,55 @@ class AgentOrchestrator:
         cv2.imwrite(path, img)
         logger.debug("[Orchestrator] Map saved -> %s", path)
 
+    def _draw_overlay(
+        self,
+        frame: np.ndarray,
+        us_cm: float,
+        action_name: str,
+        reward: float,
+        ep_total: float,
+        ep_steps: int,
+    ) -> np.ndarray:
+        """Return a copy of *frame* with a HUD overlay showing live stats."""
+        import cv2
+        out = frame.copy()
+        h, w = out.shape[:2]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        # ── Top bar (state + US distance) ────────────────────────
+        bar = out.copy()
+        cv2.rectangle(bar, (0, 0), (w, 28), (0, 0, 0), -1)
+        cv2.addWeighted(bar, 0.55, out, 0.45, 0, out)
+
+        state_colours = {
+            AgentState.INIT:    (200, 200, 200),
+            AgentState.EXPLORE: (0, 210, 0),
+            AgentState.PLAN:    (0, 210, 255),
+            AgentState.EXECUTE: (255, 200, 0),
+            AgentState.RECOVER: (0, 60, 255),
+            AgentState.STOPPED: (120, 120, 120),
+        }
+        sc = state_colours.get(self._state, (255, 255, 255))
+        cv2.putText(out, self._state.name, (6, 20),
+                    font, 0.58, sc, 1, cv2.LINE_AA)
+        us_txt = f"US: {us_cm:.0f} cm"
+        cv2.putText(out, us_txt, (w - 130, 20),
+                    font, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+
+        # ── Bottom bar (action + reward) ─────────────────────────
+        bar2 = out.copy()
+        cv2.rectangle(bar2, (0, h - 52), (w, h), (0, 0, 0), -1)
+        cv2.addWeighted(bar2, 0.55, out, 0.45, 0, out)
+
+        cv2.putText(out, f"act: {action_name}", (6, h - 32),
+                    font, 0.52, (0, 220, 60), 1, cv2.LINE_AA)
+        cv2.putText(out, f"r: {reward:+.3f}   ep: {ep_total:+.2f}", (6, h - 12),
+                    font, 0.52, (220, 220, 0), 1, cv2.LINE_AA)
+        cv2.putText(out, f"step {ep_steps}", (w - 100, h - 12),
+                    font, 0.52, (180, 180, 180), 1, cv2.LINE_AA)
+
+        return out
+
     def _transition(self, new_state: AgentState) -> None:
         if new_state != self._state:
             logger.info("[FSM] %s -> %s", self._state.name, new_state.name)
@@ -467,6 +544,8 @@ class AgentOrchestrator:
 
     def _shutdown(self) -> None:
         logger.info("[Orchestrator] Shutting down ...")
+        if self._streamer:
+            self._streamer.stop()
         self._motors.stop()
         self._gimbal.centre()
         self._camera.close()

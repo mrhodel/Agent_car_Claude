@@ -7,5 +7,7 @@ from .motors import MotorController
 from .ultrasonic import UltrasonicSensor
 from .gimbal import Gimbal
 from .camera import Camera
+from .stream_server import MJPEGStreamer
 
-__all__ = ["YahboomBoard", "MotorController", "UltrasonicSensor", "Gimbal", "Camera"]
+__all__ = ["YahboomBoard", "MotorController", "UltrasonicSensor", "Gimbal", "Camera",
+           "MJPEGStreamer"]

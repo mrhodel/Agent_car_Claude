@@ -52,7 +52,7 @@ hal:
     auto_exposure: true
     # Optional MJPEG stream for remote monitoring
     stream_port: 8080
-    stream_enabled: false
+    stream_enabled: true
 
 # ── Perception ────────────────────────────────────────────────────
 perception:
