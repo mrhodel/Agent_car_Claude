@@ -179,12 +179,14 @@ class Camera:
             while self._running:
                 t0 = time.monotonic()
 
-                # Submit cap.read() to the executor; give it 2× frame interval
+                # Submit cap.read() to the executor; give it 1 full second
+                # (well above 30fps frame time) before treating it as stalled.
                 fut = ex.submit(self._grab_frame)
                 try:
-                    frame = fut.result(timeout=interval * 4)
+                    frame = fut.result(timeout=1.0)
                 except concurrent.futures.TimeoutError:
                     frame = None
+                    logger.debug("[Camera] read timeout")
                 except Exception as exc:
                     logger.debug("[Camera] grab exception: %s", exc)
                     frame = None
@@ -194,7 +196,7 @@ class Camera:
                         self._latest_frame = frame
                     last_ok = time.monotonic()
                 elif time.monotonic() - last_ok > stall_secs:
-                    logger.warning("[Camera] V4L2 stall detected – reopening")
+                    logger.warning("[Camera] V4L2 stall detected - reopening")
                     self._reopen()
                     last_ok = time.monotonic()
 
@@ -212,19 +214,22 @@ class Camera:
             except Exception:
                 pass
         self._cap = None
-        time.sleep(0.5)
-        c = cv2.VideoCapture(self._device)
-        if c.isOpened():
-            c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
-            c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
-            c.set(cv2.CAP_PROP_FPS, self._fps)
-            ok, _ = c.read()
-            if ok:
-                self._cap = c
-                logger.info("[Camera] Reopened /dev/video%d", self._device)
-                return
+        time.sleep(1.0)  # give V4L2 time to release the device
+        # Scan all indices in case device node changed after reconnect
+        for idx in range(self._device, self._device + 10):
+            c = cv2.VideoCapture(idx)
+            if c.isOpened():
+                c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
+                c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+                c.set(cv2.CAP_PROP_FPS, self._fps)
+                ok, _ = c.read()
+                if ok:
+                    self._cap = c
+                    self._device = idx
+                    logger.info("[Camera] Reopened /dev/video%d", idx)
+                    return
             c.release()
-        logger.warning("[Camera] Reopen failed – staying in degraded mode")
+        logger.warning("[Camera] Reopen failed - no working device found")
 
     def _grab_frame(self) -> Optional[np.ndarray]:
         if self._driver == "picamera2" and self._picam:
@@ -236,7 +241,9 @@ class Camera:
                 logger.debug("[Camera] picamera2 grab error: %s", exc)
                 return None
 
-        elif self._driver == "usb" and self._cap:
+        elif self._driver == "usb":
+            if self._cap is None:
+                return None   # stall recovery in progress; keep last good frame
             # Called only from _capture_loop (single thread) so no lock needed.
             ret, frame = self._cap.read()
             if not ret:
