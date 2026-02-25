@@ -54,32 +54,31 @@ _INDEX_HTML = b"""\
     </style>
   </head>
   <body>
-    <img id="cam" src="/stream" alt="camera" onerror="reconnect()">
+    <img id="cam" alt="camera">
     <div id="info">connecting...</div>
     <script>
-      var frames=0, last=Date.now(), lastLoad=Date.now();
-      var img = document.getElementById('cam');
-      function reconnect() {
-        img.src = '/stream?t=' + Date.now();
+      var frames=0, last=Date.now(), prevUrl=null;
+      function refresh() {
+        fetch('/frame?t=' + Date.now(), {cache: 'no-store'})
+          .then(function(r) { return r.ok ? r.blob() : null; })
+          .then(function(blob) {
+            if (!blob) { setTimeout(refresh, 200); return; }
+            var url = URL.createObjectURL(blob);
+            document.getElementById('cam').src = url;
+            if (prevUrl) URL.revokeObjectURL(prevUrl);
+            prevUrl = url;
+            frames++;
+            var now = Date.now();
+            if (now - last >= 1000) {
+              document.getElementById('info').textContent =
+                Math.round(frames*1000/(now-last)) + ' fps';
+              frames = 0; last = now;
+            }
+            setTimeout(refresh, 67);  // ~15 fps
+          })
+          .catch(function() { setTimeout(refresh, 500); });
       }
-      img.addEventListener('load', function() {
-        frames++;
-        lastLoad = Date.now();
-        var now = Date.now();
-        if (now - last >= 1000) {
-          document.getElementById('info').textContent =
-            Math.round(frames*1000/(now-last)) + ' fps';
-          frames = 0; last = now;
-        }
-      });
-      // Watchdog: reconnect if no frame arrives for 3s
-      setInterval(function() {
-        if (Date.now() - lastLoad > 3000) {
-          document.getElementById('info').textContent = 'reconnecting...';
-          reconnect();
-          lastLoad = Date.now();
-        }
-      }, 1000);
+      refresh();
     </script>
   </body>
 </html>
