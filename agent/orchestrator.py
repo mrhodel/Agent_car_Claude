@@ -204,8 +204,8 @@ class AgentOrchestrator:
         us_dists = [us_dist]   # 1-element list for downstream consumers
         nearest  = us_dist
 
-        # Emergency stop
-        if nearest < self._emergency:
+        # Emergency stop – skip if already recovering (let recovery handler run)
+        if nearest < self._emergency and self._state != AgentState.RECOVER:
             logger.warning("[Safety] Emergency stop  nearest=%.1f cm", nearest)
             self._motors.stop()
             self._transition(AgentState.RECOVER)
@@ -357,12 +357,10 @@ class AgentOrchestrator:
     def _handle_recover(self) -> None:
         exhausted = self._controller.recover()
         if exhausted:
-            logger.warning("[FSM] Recovery exhausted – stopping")
-            self._motors.stop()
-            self._running = False
-        else:
-            self._current_path = None
-            self._transition(AgentState.EXPLORE)
+            logger.warning("[FSM] Recovery exhausted – resetting via env and back to EXPLORE")
+            self._rl_state = self._env.reset()   # env reset backs robot away from wall
+        self._current_path = None
+        self._transition(AgentState.EXPLORE)
 
     # ── Helpers ───────────────────────────────────────────────────
 
