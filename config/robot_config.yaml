@@ -26,7 +26,7 @@ hal:
     i2c_address: 0x2B          # same expansion board as motors/servos
     max_range_cm: 400
     min_range_cm: 3            # HC-SR04 physical minimum range ~2-3cm actual
-    samples_per_reading: 1     # median filter over N acquisitions (1=fastest, 3=more stable)
+    samples_per_reading: 3     # median filter over N acquisitions (1=fastest, 3=more stable)
 
   gimbal:
     # Servos driven by the Yahboom expansion board via I2C.

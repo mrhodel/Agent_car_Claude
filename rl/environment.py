@@ -165,7 +165,13 @@ class RobotEnv:
             if self._us and self._motors:
                 try:
                     for attempt in range(5):
-                        dist = self._us.read_cm()
+                        # Two consecutive readings must both be low to confirm
+                        # a real obstacle (guards against single spurious readings
+                        # at min_range=3 cm from I2C noise / sensor blind-spot).
+                        d1 = self._us.read_cm()
+                        time.sleep(0.05)
+                        d2 = self._us.read_cm()
+                        dist = min(d1, d2)
                         if dist >= 25.0:
                             break
                         logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
