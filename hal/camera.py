@@ -62,21 +62,25 @@ class Camera:
         # Primary: USB camera (stock Raspbot V2 hardware)
         if self._driver == "usb":
             import cv2
-            # Retry a few times — USB camera can take a moment after power-on/replug
-            _max_usb_retries = 3
+            # On RPi 5 the internal camera interfaces claim low device indices,
+            # so the USB camera may appear at video1, video2, etc.
+            # Scan from the configured device_index up to device_index+10.
+            _scan_range = 10
             cap = None
-            for attempt in range(_max_usb_retries):
-                cap = cv2.VideoCapture(self._device)
-                if cap.isOpened():
-                    break
-                cap.release()
-                if attempt < _max_usb_retries - 1:
-                    logger.warning("[Camera] USB device %d not ready (attempt %d/%d) – retrying in 2s",
-                                   self._device, attempt + 1, _max_usb_retries)
-                    time.sleep(2.0)
+            found_index = None
+            for idx in range(self._device, self._device + _scan_range):
+                c = cv2.VideoCapture(idx)
+                if c.isOpened():
+                    # Verify it can actually produce a frame (rules out dummy devices)
+                    ok, _ = c.read()
+                    if ok:
+                        cap = c
+                        found_index = idx
+                        break
+                c.release()
             if cap is None or not cap.isOpened():
-                logger.warning("[Camera] USB device %d not found after %d attempts -> sim",
-                               self._device, _max_usb_retries)
+                logger.warning("[Camera] No USB camera found scanning /dev/video%d–%d -> sim",
+                               self._device, self._device + _scan_range - 1)
                 self._driver = "simulation"
                 if cap:
                     cap.release()
@@ -85,8 +89,9 @@ class Camera:
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                 cap.set(cv2.CAP_PROP_FPS, self._fps)
                 self._cap = cap
+                self._device = found_index  # update so logs are accurate
                 logger.info("[Camera] USB /dev/video%d  %dx%d @ %d fps",
-                            self._device, self._width, self._height, self._fps)
+                            found_index, self._width, self._height, self._fps)
 
         # Optional: picamera2 for CSI-connected cameras (non-default on Raspbot V2)
         elif self._driver == "picamera2":
