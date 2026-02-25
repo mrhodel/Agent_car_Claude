@@ -48,7 +48,7 @@ hal:
     device_index: 0            # USB video device index
     width: 640
     height: 480
-    fps: 30
+    fps: 15
     auto_exposure: true
     # Optional MJPEG stream for remote monitoring
     stream_port: 8080

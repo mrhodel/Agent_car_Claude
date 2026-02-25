@@ -71,8 +71,10 @@ class Camera:
             for idx in range(self._device, self._device + _scan_range):
                 c = cv2.VideoCapture(idx)
                 if c.isOpened():
-                    # Configure BEFORE the first read so V4L2 doesn't need to
-                    # reconfigure mid-stream (which causes frozen frames).
+                    # Force MJPEG at the camera side so frames travel over USB
+                    # compressed (~1 MB/s vs ~18 MB/s raw YUYV). This prevents
+                    # USB bandwidth saturation which causes cap.read() failures.
+                    c.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
                     c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                     c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                     c.set(cv2.CAP_PROP_FPS, self._fps)
@@ -205,6 +207,7 @@ class Camera:
         for idx in range(self._device, self._device + 10):
             c = cv2.VideoCapture(idx)
             if c.isOpened():
+                c.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
                 c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                 c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                 c.set(cv2.CAP_PROP_FPS, self._fps)
