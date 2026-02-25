@@ -71,10 +71,6 @@ class Camera:
             for idx in range(self._device, self._device + _scan_range):
                 c = cv2.VideoCapture(idx)
                 if c.isOpened():
-                    # Force MJPEG at the camera side so frames travel over USB
-                    # compressed (~1 MB/s vs ~18 MB/s raw YUYV). This prevents
-                    # USB bandwidth saturation which causes cap.read() failures.
-                    c.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
                     c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                     c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
                     c.set(cv2.CAP_PROP_FPS, self._fps)
@@ -169,9 +165,10 @@ class Camera:
 
     def _capture_loop(self) -> None:
         """Sole caller of cap.read(). Rate-limited to camera fps.
-        After 30 consecutive failures (~1 s) releases and reopens the device."""
-        interval  = 1.0 / max(self._fps, 1)
-        fail_count = 0
+        After any failures, keeps _latest_frame at last good value so callers
+        see a valid stale frame rather than None. cap.read() recovers naturally
+        once servo PWM noise subsides - no reopen needed."""
+        interval = 1.0 / max(self._fps, 1)
 
         while self._running:
             t0    = time.monotonic()
@@ -180,13 +177,7 @@ class Camera:
             if frame is not None:
                 with self._lock:
                     self._latest_frame = frame
-                fail_count = 0
-            else:
-                fail_count += 1
-                if fail_count >= 60:
-                    logger.warning("[Camera] V4L2 consecutive failures - reopening")
-                    self._reopen()
-                    fail_count = 0
+            # else: keep _latest_frame at last good frame; do NOT reopen.
 
             elapsed   = time.monotonic() - t0
             remaining = interval - elapsed
@@ -194,31 +185,7 @@ class Camera:
                 time.sleep(remaining)
 
     def _reopen(self) -> None:
-        """Release and reopen the USB camera after a stall."""
-        import cv2
-        if self._cap:
-            try:
-                self._cap.release()
-            except Exception:
-                pass
-        self._cap = None
-        time.sleep(2.0)  # give V4L2 time to release the device
-        # Scan all indices in case device node changed after reconnect
-        for idx in range(self._device, self._device + 10):
-            c = cv2.VideoCapture(idx)
-            if c.isOpened():
-                c.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-                c.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
-                c.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
-                c.set(cv2.CAP_PROP_FPS, self._fps)
-                ok, _ = c.read()
-                if ok:
-                    self._cap = c
-                    self._device = idx
-                    logger.info("[Camera] Reopened /dev/video%d", idx)
-                    return
-            c.release()
-        logger.warning("[Camera] Reopen failed - no working device found")
+        pass  # kept for API compatibility but no longer called
 
     def _grab_frame(self) -> Optional[np.ndarray]:
         if self._driver == "picamera2" and self._picam:
