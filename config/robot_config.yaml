@@ -163,7 +163,8 @@ rl:
     collision_penalty: -15.0
     proximity_penalty_scale: -0.5  # ×(1/dist) when dist < 30 cm
     time_step_cost: -0.01
-    smooth_motion_bonus: 0.05  # bonus for continuing same translational direction
+    smooth_motion_bonus: 0.05  # momentum bonus for repeating same locomotion action
+    gimbal_step_cost: -0.04    # extra per-step cost for gimbal-only actions (6-9)
     spin_penalty: -0.02        # per-step penalty for sustained rotation/strafe (after 2 consecutive)
 
   ppo:

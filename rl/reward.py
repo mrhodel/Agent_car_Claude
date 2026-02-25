@@ -7,8 +7,10 @@ Design goals:
   +  Reward goal reaching
   -  Penalise collisions heavily
   -  Penalise lingering near obstacles
-  +  Small bonus for smooth motion (avoids jittery behaviour, NOT for rotations)
+  +  Small momentum bonus for repeating same locomotion action
+  -  No reversal penalty — backing away then going forward is DESIRED
   -  Penalise sustained rotation (discourages spinning in place)
+  -  Extra cost for gimbal-only actions (discourage using them as cheap filler)
   -  Small per-step time cost (encourages efficiency)
 """
 from __future__ import annotations
@@ -25,6 +27,8 @@ ACT_ROTATE_RIGHT = 5
 _ROTATE_ACTIONS  = {ACT_ROTATE_LEFT, ACT_ROTATE_RIGHT}
 # Only pure rotation counts as "spinning" — strafing is a useful mecanum move
 _SPINNING_ACTIONS = {ACT_ROTATE_LEFT, ACT_ROTATE_RIGHT}
+# Gimbal pan/tilt actions — useful for perception but must not replace movement
+_GIMBAL_ACTIONS   = {6, 7, 8, 9}   # pan_L, pan_R, tilt_up, tilt_down
 
 
 class RewardCalculator:
@@ -59,19 +63,26 @@ class RewardCalculator:
         # ── Time cost ────────────────────────────────────────────
         r += float(cfg.get("time_step_cost", -0.01))
 
-        # ── Smooth motion bonus (translational forward/back only) ─
-        # Bonus for continuing same direction — but NOT for rotations or
-        # strafes, which would otherwise reward spinning/strafing in place.
+        # ── Momentum bonus (same locomotion action repeated) ─────
+        # Small bonus for continuing the same direction of travel.
+        # Deliberately NO reversal penalty: backing away from a wall and
+        # then going forward is exactly the desired recovery behaviour.
+        # Gimbal actions are excluded — no momentum reward for camera moves.
         smooth_bonus = float(cfg.get("smooth_motion_bonus", 0.05))
-        if action not in _SPINNING_ACTIONS:
+        if action not in _SPINNING_ACTIONS and action not in _GIMBAL_ACTIONS:
             if action == prev_action:
                 r += smooth_bonus * 0.5
-            elif _is_reversal(action, prev_action):
-                r -= smooth_bonus
 
-        # ── Sustained non-forward penalty ────────────────────────
-        # Small per-step penalty that grows with consecutive rotate/strafe,
-        # discouraging the policy from spinning or strafing in place.
+        # ── Gimbal-only action extra cost ─────────────────────────
+        # Camera pan/tilt gives the policy perceptual info but the policy
+        # was using gimbal moves as cheap "safe" filler (~40/143 steps).
+        # Extra cost makes locomotion relatively more attractive.
+        if action in _GIMBAL_ACTIONS:
+            r += float(cfg.get("gimbal_step_cost", -0.04))
+
+        # ── Sustained rotation penalty ────────────────────────────
+        # Small per-step penalty that grows with consecutive rotations,
+        # discouraging the policy from spinning in place.
         if action in _SPINNING_ACTIONS and consecutive_rotations > 2:
             spin_penalty = float(cfg.get("spin_penalty", -0.1))
             r += spin_penalty * min(consecutive_rotations - 2, 8)
