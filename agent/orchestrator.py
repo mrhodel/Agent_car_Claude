@@ -273,8 +273,8 @@ class AgentOrchestrator:
 
         action, log_prob, value = self._agent.select_action(self._rl_state)
 
-        # Anti-spin guard: if 4+ consecutive spin/strafe actions, force forward
-        _SPIN_ACTIONS = {2, 3, 4, 5}
+        # Anti-spin guard: if 4+ consecutive rotate actions, force forward
+        _SPIN_ACTIONS = {4, 5}  # rotate_left, rotate_right only (strafe is useful)
         if action in _SPIN_ACTIONS:
             self._spin_count += 1
         else:
