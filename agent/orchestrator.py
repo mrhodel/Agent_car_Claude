@@ -239,6 +239,7 @@ class AgentOrchestrator:
 
         # Periodic gimbal scan (camera-only sweep; US is fixed)
         if time.monotonic() - self._last_scan_t > self._rescan_iv:
+            logger.info("[Scan] Periodic gimbal sweep (camera coverage, US is fixed forward)")
             self._full_scan()
 
         # Periodic map save
@@ -266,25 +267,54 @@ class AgentOrchestrator:
         self._rl_state = self._env.reset()
         self._transition(AgentState.EXPLORE)
 
+    # Human-readable action names for diagnostics
+    _ACTION_NAMES = {
+        0: "forward",
+        1: "backward",
+        2: "strafe_left",
+        3: "strafe_right",
+        4: "rotate_left",
+        5: "rotate_right",
+        6: "gimbal_pan_left",
+        7: "gimbal_pan_right",
+        8: "gimbal_tilt_up",
+        9: "gimbal_tilt_down",
+        10: "stop",
+    }
+
     def _handle_explore(self, us_dists, obs_result) -> None:
         """Use RL policy to pick the next action."""
         if self._rl_state is None:
             self._rl_state = self._env.reset()
 
         action, log_prob, value = self._agent.select_action(self._rl_state)
+        nearest_cm = us_dists[0] if us_dists else 999.0
 
         # Anti-spin guard: if 4+ consecutive rotate actions, force forward
         _SPIN_ACTIONS = {4, 5}  # rotate_left, rotate_right only (strafe is useful)
+        overridden = False
         if action in _SPIN_ACTIONS:
             self._spin_count += 1
         else:
             self._spin_count = 0
         if self._spin_count >= 4:
-            logger.debug("[Explore] Anti-spin override -> forward")
             action = 0
             self._spin_count = 0
+            overridden = True
+
+        action_name = self._ACTION_NAMES.get(action, str(action))
+        logger.info(
+            "[Explore] step=%-4d  action=%-14s  us=%-6.1f cm  value=%+.3f  logp=%+.3f%s",
+            self._ep_steps, action_name, nearest_cm, value, log_prob,
+            "  (anti-spin override)" if overridden else "",
+        )
 
         next_state, reward, done, info = self._env.step(action)
+
+        logger.info(
+            "[Explore] step=%-4d  reward=%+7.3f  ep_total=%+8.3f  done=%s",
+            self._ep_steps, reward, self._ep_reward + reward, done,
+        )
 
         self._agent.store(self._rl_state, action, log_prob, reward, done, value)
         self._ep_reward += reward
@@ -295,6 +325,7 @@ class AgentOrchestrator:
         if self._agent.ready_to_update():
             _, _, last_val = self._agent.select_action(next_state)
             self._agent.update(last_val if not done else 0.0)
+            logger.info("[Explore] PPO update triggered at step %d", self._ep_steps)
 
         # Check if we should switch to planned navigation
         frontiers = self._grid.get_frontiers(
@@ -303,9 +334,18 @@ class AgentOrchestrator:
         )
         if frontiers and self._ep_steps % 50 == 0:
             self._target_frontier = frontiers[0]
+            logger.info(
+                "[Explore] Frontier selected  grid=(%d,%d)  total_frontiers=%d",
+                self._target_frontier.row, self._target_frontier.col, len(frontiers),
+            )
             self._transition(AgentState.PLAN)
 
         if done:
+            logger.info(
+                "[Explore] Episode done  steps=%d  total_reward=%.2f  explored_cells=%d",
+                self._ep_steps, self._ep_reward,
+                self._grid.explored_cells if self._grid else 0,
+            )
             self._agent.on_episode_end(self._ep_reward, self._ep_steps)
             self._ep_reward = 0.0
             self._ep_steps  = 0
@@ -345,16 +385,25 @@ class AgentOrchestrator:
             self._pose.theta,
             nearest_cm,
         )
+        waypoints_left = len(self._current_path.waypoints) if self._current_path else 0
+        logger.debug(
+            "[Execute] us=%.1f cm  waypoints_remaining=%d  goal_reached=%s",
+            nearest_cm, waypoints_left, goal_reached,
+        )
         if goal_reached:
             logger.info("[FSM] Path goal reached – back to EXPLORE")
             self._current_path = None
             self._transition(AgentState.EXPLORE)
         elif nearest_cm < 20:
-            logger.warning("[FSM] Obstacle during execution – RECOVER")
+            logger.warning("[FSM] Obstacle during execution – RECOVER  nearest=%.1f cm", nearest_cm)
             self._motors.stop()
             self._transition(AgentState.RECOVER)
 
     def _handle_recover(self) -> None:
+        us_dist = self._us.read_cm()
+        logger.info("[Recover] Attempting recovery  us=%.1f cm  attempt=%d/%d",
+                    us_dist, self._controller._recovery_attempts + 1,
+                    self._controller._max_recovery)
         exhausted = self._controller.recover()
         if exhausted:
             logger.warning("[FSM] Recovery exhausted – resetting via env and back to EXPLORE")
