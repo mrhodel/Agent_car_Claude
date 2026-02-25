@@ -62,11 +62,24 @@ class Camera:
         # Primary: USB camera (stock Raspbot V2 hardware)
         if self._driver == "usb":
             import cv2
-            cap = cv2.VideoCapture(self._device)
-            if not cap.isOpened():
-                logger.warning("[Camera] USB device %d not found -> sim", self._device)
-                self._driver = "simulation"
+            # Retry a few times — USB camera can take a moment after power-on/replug
+            _max_usb_retries = 3
+            cap = None
+            for attempt in range(_max_usb_retries):
+                cap = cv2.VideoCapture(self._device)
+                if cap.isOpened():
+                    break
                 cap.release()
+                if attempt < _max_usb_retries - 1:
+                    logger.warning("[Camera] USB device %d not ready (attempt %d/%d) – retrying in 2s",
+                                   self._device, attempt + 1, _max_usb_retries)
+                    time.sleep(2.0)
+            if cap is None or not cap.isOpened():
+                logger.warning("[Camera] USB device %d not found after %d attempts -> sim",
+                               self._device, _max_usb_retries)
+                self._driver = "simulation"
+                if cap:
+                    cap.release()
             else:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self._width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)

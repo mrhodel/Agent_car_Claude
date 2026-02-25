@@ -408,6 +408,9 @@ class AgentOrchestrator:
         if exhausted:
             logger.warning("[FSM] Recovery exhausted – resetting via env and back to EXPLORE")
             self._rl_state = self._env.reset()   # env reset backs robot away from wall
+            self._controller.reset_recovery()    # clear counter so next encounter starts fresh
+        else:
+            self._controller.reset_recovery()    # clear after each successful recovery too
         self._current_path = None
         self._transition(AgentState.EXPLORE)
 
