@@ -130,10 +130,20 @@ class Trainer:
         """
         Run greedy evaluation.
 
+        In hardware (robot) mode evaluation is skipped: the greedy policy
+        spins in place until the policy has converged enough to be useful,
+        and deterministic rollouts on hardware waste battery without adding
+        training signal.  Sim eval runs normally.
+
         Returns
         -------
         dict with mean reward, mean length, mean explored cells.
         """
+        if getattr(self._env, '_mode', 'sim') == 'robot':
+            logger.info("[Trainer] Skipping hardware eval (policy not yet converged)")
+            return {"mean_reward": 0.0, "std_reward": 0.0,
+                    "mean_length": 0.0, "mean_explored": 0.0}
+
         logger.info("[Trainer] Evaluating  n=%d episodes", n_episodes)
         rewards  = []
         lengths  = []

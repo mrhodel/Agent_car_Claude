@@ -163,22 +163,30 @@ class RobotEnv:
             # Wall escape: back away from front obstacle, then nudge forward
             # to clear any rear wall the robot may have backed into.
             if self._us and self._motors:
+                # min_range reading (e.g. 3.0 cm) means the HC-SR04 blind spot
+                # fired — the sensor physically cannot measure <7 cm and returns
+                # min_range as a sentinel.  Treat it as "unknown", not a
+                # confirmed obstacle, so we only escape on readings that are
+                # clearly in range AND consistently low.
+                _min_r = float(self._cfg.get("hal", {}).get(
+                               "ultrasonic", {}).get("min_range_cm", 3.0))
                 try:
                     for attempt in range(5):
-                        # Require BOTH readings to be low before escaping.
-                        # A single spurious I2C reading (often 3.0 cm = min_range)
-                        # will be contradicted by the follow-up and suppressed.
                         d1 = self._us.read_cm()
                         time.sleep(0.05)
                         d2 = self._us.read_cm()
+                        # Skip if either reading is exactly min_range (blind spot)
+                        if d1 <= _min_r or d2 <= _min_r:
+                            logger.debug("[Env] Wall escape suppressed: blind-spot"
+                                         " reading (d1=%.1f d2=%.1f cm)", d1, d2)
+                            break
                         if d1 >= 25.0 or d2 >= 25.0:
-                            # At least one reading says clear — no real obstacle
                             if d1 < 25.0 or d2 < 25.0:
                                 logger.debug("[Env] Spurious US reading suppressed"
                                              " at reset (d1=%.1f d2=%.1f cm)", d1, d2)
                             break
-                        # Both readings confirmed low — real obstacle
-                        dist = max(d1, d2)  # use the less conservative value
+                        # Both readings confirmed in-range and low — real obstacle
+                        dist = max(d1, d2)
                         logger.info("[Env] Wall escape attempt %d: dist=%.1f cm",
                                     attempt + 1, dist)
                         self._motors.move_backward(40)
