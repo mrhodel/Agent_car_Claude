@@ -195,10 +195,26 @@ class RobotEnv:
                         time.sleep(0.4)
                         self._motors.stop()
                         time.sleep(0.15)
-                    # Always nudge forward to clear any rear wall
-                    logger.debug("[Env] Reset forward nudge")
-                    self._motors.move_forward(40)
-                    time.sleep(0.3)
+                    # Forward nudge: drive until front reads > clear_cm OR
+                    # we hit a front wall (blind spot).  This ensures the
+                    # robot is always > emergency_stop_cm from any wall
+                    # before the first step of the new episode.
+                    _clear_cm  = self._emergency_cm + 15.0   # 25 cm target
+                    _nudge_max = 6
+                    for _n in range(_nudge_max):
+                        _dn = self._us.read_cm()
+                        if _dn > _clear_cm:
+                            logger.debug("[Env] Reset nudge done: front=%.1f cm", _dn)
+                            break
+                        if _dn <= self._min_range_cm:
+                            # Entering blind spot of a front wall — stop
+                            logger.debug("[Env] Reset nudge stopped: front blind spot")
+                            break
+                        logger.debug("[Env] Reset nudge %d/6: front=%.1f cm, driving fwd", _n + 1, _dn)
+                        self._motors.move_forward(40)
+                        time.sleep(0.3)
+                        self._motors.stop()
+                        time.sleep(0.1)
                 finally:
                     self._motors.stop()
             time.sleep(0.1)
