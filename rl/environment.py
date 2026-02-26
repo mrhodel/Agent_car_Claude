@@ -117,6 +117,8 @@ class RobotEnv:
 
         self._emergency_cm  = float(cfg.get("agent", {}).get(
                                   "safety", {}).get("emergency_stop_cm", 10))
+        self._min_range_cm = float(cfg.get("hal", {}).get(
+                                  "ultrasonic", {}).get("min_range_cm", 3.0))
 
         # State size
         extra = 0
@@ -246,7 +248,12 @@ class RobotEnv:
                 free_dists_cm=[us_dist] if us_dist >= 300 else [],
             )
 
-        nearest_cm = min(us_dists) if us_dists else 200.0
+        # Filter HC-SR04 blind-spot sentinel (≤ min_range_cm) before computing
+        # nearest_cm — a 3.0 cm glitch must NOT trigger emergency stop.
+        _real_dists = [d for d in us_dists if d > self._min_range_cm] if us_dists else []
+        if us_dists and not _real_dists:
+            logger.debug("[Env] All US readings ≤ min_range (blind spot) — treating as clear")
+        nearest_cm = min(_real_dists) if _real_dists else 200.0
 
         # Reward
         from rl.reward import RewardCalculator, _SPINNING_ACTIONS
