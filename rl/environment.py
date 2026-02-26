@@ -248,12 +248,11 @@ class RobotEnv:
                 free_dists_cm=[us_dist] if us_dist >= 300 else [],
             )
 
-        # Filter HC-SR04 blind-spot sentinel (≤ min_range_cm) before computing
-        # nearest_cm — a 3.0 cm glitch must NOT trigger emergency stop.
-        _real_dists = [d for d in us_dists if d > self._min_range_cm] if us_dists else []
-        if us_dists and not _real_dists:
-            logger.debug("[Env] All US readings ≤ min_range (blind spot) — treating as clear")
-        nearest_cm = min(_real_dists) if _real_dists else 200.0
+        # nearest_cm: use raw min.  HC-SR04 returns min_range_cm (3.0) when the
+        # target is in the sensor blind spot (<~7 cm) — that IS a genuine close-
+        # range event and should trigger emergency stop just as a real reading
+        # would.  Do NOT filter it out.
+        nearest_cm = min(us_dists) if us_dists else 200.0
 
         # Reward
         from rl.reward import RewardCalculator, _SPINNING_ACTIONS
