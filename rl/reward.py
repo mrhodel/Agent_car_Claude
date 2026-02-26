@@ -73,12 +73,17 @@ class RewardCalculator:
             if action == prev_action:
                 r += smooth_bonus * 0.5
 
+        # ── Forward bonus ──────────────────────────────────────────
+        # Small reward for choosing to move forward, nudging the policy
+        # toward exploration over passive avoidance.
+        if action == ACT_FORWARD:
+            r += float(cfg.get("forward_bonus", 0.02))
+
         # ── Backward-step cost ───────────────────────────────────────
-        # Small recurring penalty for reversing.  Enough to make backing
-        # into a wall repeatedly unprofitable without blocking short
-        # backward moves used for genuine obstacle avoidance.
+        # Recurring penalty for reversing — makes wall-backing unprofitable
+        # without blocking short retreats for genuine obstacle avoidance.
         if action == ACT_BACKWARD:
-            r += float(cfg.get("backward_step_cost", -0.03))
+            r += float(cfg.get("backward_step_cost", -0.05))
 
         # ── Gimbal-only action extra cost ─────────────────────────
         # Camera pan/tilt gives the policy perceptual info but the policy
