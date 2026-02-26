@@ -145,11 +145,11 @@ class _GimbalSweeper(threading.Thread):
         self.gimbal = gimbal
         self.pan_deg = pan_deg
         self.tilt_deg = tilt_deg
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self):
         g = self.gimbal
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             g.set_pan(-self.pan_deg)
             time.sleep(0.6)
             g.set_pan(self.pan_deg)
@@ -157,7 +157,7 @@ class _GimbalSweeper(threading.Thread):
         g.centre()
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
         self.join(timeout=3)
 
 
