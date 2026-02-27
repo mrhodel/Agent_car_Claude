@@ -155,8 +155,10 @@ class Trainer:
 
         # Simple improvement check (if enough episodes run)
         if len(self._agent._ep_rewards) >= 20:
-            first_10 = sum(self._agent._ep_rewards[:10]) / 10.0
-            last_10  = sum(self._agent._ep_rewards[-10:]) / 10.0
+            # deque slicing is not supported, convert to list
+            rewards_list = list(self._agent._ep_rewards)
+            first_10 = sum(rewards_list[:10]) / 10.0
+            last_10  = sum(rewards_list[-10:]) / 10.0
             improvement = last_10 - first_10
             if first_10 != 0:
                 pct = (improvement / abs(first_10)) * 100.0

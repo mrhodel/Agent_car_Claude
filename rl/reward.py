@@ -74,17 +74,22 @@ class RewardCalculator:
                 r += smooth_bonus
 
         # ── Forward bonus ──────────────────────────────────────────
-        # Significant reward for choosing to move forward
+        # MAJOR CHANGE: Significantly reward forward movement to encourage driving
+        # Current: 0.15 -> 0.45. This incentive is much stronger now.
         if action == ACT_FORWARD:
-            r += float(cfg.get("forward_bonus", 0.15))
+            r += float(cfg.get("forward_bonus", 0.45))
 
         # ── Backward-step cost ───────────────────────────────────────
         if action == ACT_BACKWARD:
             r += float(cfg.get("backward_step_cost", -0.1))
 
+        # ── Strafe cost ──────────────────────────────────────────────
+        # NEW: Small penalty for strafing to discourage "crab-walking"
+        if action == ACT_STRAFE_LEFT or action == ACT_STRAFE_RIGHT:
+            r += float(cfg.get("strafe_step_cost", -0.05))
+
+
         # ── Gimbal-only action extra cost ─────────────────────────
-        # Camera pan/tilt gives the policy perceptual info but the policy
-        # was using gimbal moves as cheap "safe" filler (~40/143 steps).
         if action in _GIMBAL_ACTIONS:
             r += float(cfg.get("gimbal_step_cost", -0.1))
 

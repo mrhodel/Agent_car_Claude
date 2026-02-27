@@ -320,6 +320,8 @@ def main() -> None:
     parser.add_argument("--episodes",   type=int, default=500)
     parser.add_argument("--hardware",   action="store_true",
                         help="Use real hardware during training")
+    parser.add_argument("--render",     action="store_true",
+                        help="Render simulation (requires display)")
     parser.add_argument("--checkpoint", default=None,
                         help="Path to load a saved policy checkpoint")
     parser.add_argument("--log-level",  default="INFO")
@@ -341,6 +343,7 @@ def main() -> None:
             args.checkpoint = latest_pt
 
     cfg = load_config(args.config)
+    if args.render: cfg["render_sim"] = True
     log_dir   = cfg.get("agent", {}).get("logging", {}).get("log_dir", "logs/")
     log_level = (cfg.get("agent", {}).get("logging", {}).get("level", args.log_level)
                  or args.log_level)

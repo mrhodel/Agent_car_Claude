@@ -201,26 +201,22 @@ class RobotEnv:
                         time.sleep(0.4)
                         self._motors.stop()
                         time.sleep(0.15)
-                    # Forward nudge: drive until front reads > clear_cm OR
-                    # we hit a front wall (blind spot).  This ensures the
-                    # robot is always > emergency_stop_cm from any wall
-                    # before the first step of the new episode.
-                    _clear_cm  = self._emergency_cm + 15.0   # 25 cm target
-                    _nudge_max = 6
-                    for _n in range(_nudge_max):
-                        _dn = self._us.read_cm()
-                        if _dn > _clear_cm:
-                            logger.debug("[Env] Reset nudge done: front=%.1f cm", _dn)
+                    # ── SAFETY CHECK ──
+                    # Ensure we are not starting the episode inside the emergency radius.
+                    # If we are too close (< 25cm), force a backward move.
+                    
+                    _safe_start_cm = 25.0
+                    for _bk in range(3):
+                        _d_check = self._us.read_cm()
+                        if _d_check > _safe_start_cm:
                             break
-                        if _dn <= self._min_range_cm:
-                            # Entering blind spot of a front wall — stop
-                            logger.debug("[Env] Reset nudge stopped: front blind spot")
-                            break
-                        logger.debug("[Env] Reset nudge %d/6: front=%.1f cm, driving fwd", _n + 1, _dn)
-                        self._motors.move_forward(40)
-                        time.sleep(0.3)
+                        
+                        logger.warning("[Env] Too close at start (%.1f cm) -> Backing up...", _d_check)
+                        self._motors.move_backward(45)
+                        time.sleep(0.4)
                         self._motors.stop()
-                        time.sleep(0.1)
+                        time.sleep(0.2)
+
                 finally:
                     self._motors.stop()
             time.sleep(0.1)
@@ -339,6 +335,7 @@ class RobotEnv:
             "stuck_backward": stuck_backward,
             "done_reason": done_reason,
         }
+        if self._cfg.get("render_sim", False) and self._mode == "sim": self.render()
         return state, reward, done, info
 
     # ── State assembly ────────────────────────────────────────────
@@ -658,3 +655,54 @@ class RobotEnv:
     def _sim_us_rays(self) -> list:
         """Deprecated: use _sim_us_forward().  Returns 1-element list."""
         return [self._sim_us_forward()]
+
+    def render(self) -> None:
+        """Visualize simulation state using OpenCV."""
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            return
+
+        # 10m x 10m area (-5..5), 500x500 img => 50 px/m
+        width = 500
+        mid = width // 2
+        scale = 50.0
+
+        # White background
+        img = np.full((width, width, 3), 255, dtype=np.uint8)
+
+        # Draw obstacles (grey)
+        for ox, oy, r in self._sim_obstacles:
+            # Transform to image coords (x right, y up in sim -> y down in img)
+            cx = int(mid + ox * scale)
+            cy = int(mid - oy * scale)
+            cr = int(r * scale)
+            cv2.circle(img, (cx, cy), cr, (100, 100, 100), -1)
+
+        # Draw robot
+        rx = int(mid + self._robot_x * scale)
+        ry = int(mid - self._robot_y * scale)
+        
+        # Body (Blue)
+        cv2.circle(img, (rx, ry), 8, (255, 0, 0), -1)
+        
+        # Heading (Red Line) - show orientation
+        # Robot theta 0 is East (Right), pi/2 is North (Up in Sim, Down in Img?? wait)
+        # Math: y axis is usually up. Screen y is down.
+        # So sim(y) -> img(mid - y).
+        # sin(theta) affects y. if theta=pi/2, y increases. img_y decreases. 
+        # So we subtract sin component. Correct.
+        
+        # Sensor ray (Green)
+        dist_m = self._sim_us_forward() / 100.0
+        draw_dist = min(dist_m, 2.0)
+        
+        ex = int(rx + (draw_dist * scale) * math.cos(self._robot_theta))
+        ey = int(ry - (draw_dist * scale) * math.sin(self._robot_theta))
+        
+        cv2.line(img, (rx, ry), (ex, ey), (0, 255, 0), 1)
+
+        # Show window
+        cv2.imshow("Robot Sim (10x10m Room)", img)
+        cv2.waitKey(1)
