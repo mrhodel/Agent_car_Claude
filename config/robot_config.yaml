@@ -195,6 +195,7 @@ rl:
 # ── Agent Orchestrator ────────────────────────────────────────────
 agent:
   loop_hz: 10                  # main control loop frequency
+  learn_in_run_mode: false     # Enable to update policy weights during 'run' mode (not recommended for deployment)
   safety:
     emergency_stop_cm: 15      # unconditional halt if anything < N cm
     low_battery_voltage: 6.8   # volts (if voltage monitor available)

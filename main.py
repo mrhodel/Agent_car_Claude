@@ -69,22 +69,13 @@ def train_mode(cfg: dict, args: argparse.Namespace) -> None:
     from perception   import VisionPipeline, SensorFusion
     from rl           import RobotEnv, PPOAgent, Trainer
     from rl.policy    import ActorCritic
+    from rl.utils     import calculate_state_dim
 
     mode = "robot" if args.hardware else "sim"
     logging.getLogger().info("Training mode: %s", mode)
 
     rl_cfg    = cfg.get("rl", {})
-    state_cfg = rl_cfg.get("state", {})
-
-    # Build state dimension
-    n_rays     = int(state_cfg.get("ultrasonic_rays", 5))
-    feat_dim   = int(state_cfg.get("visual_feature_dim", 128))
-    depth_flat = int(state_cfg.get("depth_map_flat", 256))
-    map_sz     = int(state_cfg.get("local_map_size", 7))
-    extra = 0
-    if state_cfg.get("include_velocity", True): extra += 3
-    if state_cfg.get("include_heading",  True): extra += 2
-    state_dim = n_rays + feat_dim + depth_flat + map_sz**2 + extra
+    state_dim = calculate_state_dim(rl_cfg)
 
     n_actions = 11
 
@@ -149,17 +140,10 @@ def eval_mode(cfg: dict, args: argparse.Namespace) -> None:
     from mapping   import OccupancyGrid
     from rl        import RobotEnv, PPOAgent, Trainer
     from rl.policy import ActorCritic
+    from rl.utils     import calculate_state_dim
 
     rl_cfg    = cfg.get("rl", {})
-    state_cfg = rl_cfg.get("state", {})
-    n_rays    = int(state_cfg.get("ultrasonic_rays", 5))
-    feat_dim  = int(state_cfg.get("visual_feature_dim", 128))
-    depth_flat= int(state_cfg.get("depth_map_flat", 256))
-    map_sz    = int(state_cfg.get("local_map_size", 7))
-    extra = 0
-    if state_cfg.get("include_velocity", True): extra += 3
-    if state_cfg.get("include_heading",  True): extra += 2
-    state_dim = n_rays + feat_dim + depth_flat + map_sz**2 + extra
+    state_dim = calculate_state_dim(rl_cfg)
 
     grid   = OccupancyGrid(cfg.get("mapping", {}).get("grid", {}))
     env    = RobotEnv(cfg=cfg, grid=grid, mode="sim")

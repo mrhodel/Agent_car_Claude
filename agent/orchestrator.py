@@ -44,6 +44,7 @@ from mapping      import OccupancyGrid
 from mapping.occupancy_grid import RobotPose
 from navigation   import AStarPlanner, MotionController
 from rl           import RobotEnv, ActorCritic, PPOAgent
+from rl.utils     import calculate_state_dim
 
 logger = logging.getLogger(__name__)
 
@@ -105,15 +106,7 @@ class AgentOrchestrator:
 
         # ── RL ───────────────────────────────────────────────────
         rl_cfg = cfg.get("rl", {})
-        state_cfg = rl_cfg.get("state", {})
-        n_rays     = int(state_cfg.get("ultrasonic_rays",    1))  # fixed sensor = 1
-        feat_dim   = int(state_cfg.get("visual_feature_dim", 128))
-        depth_flat = int(state_cfg.get("depth_map_flat",     256))
-        map_sz     = int(state_cfg.get("local_map_size",     7))
-        extra = 0
-        if state_cfg.get("include_velocity", True): extra += 3
-        if state_cfg.get("include_heading",  True): extra += 2
-        state_dim = n_rays + feat_dim + depth_flat + map_sz**2 + extra
+        state_dim = calculate_state_dim(rl_cfg)
 
         self._env = RobotEnv(
             cfg=cfg,
@@ -355,11 +348,12 @@ class AgentOrchestrator:
         self._ep_steps  += 1
         self._rl_state   = next_state
 
-        # Trigger PPO update if buffer is full
-        if self._agent.ready_to_update():
+        # Trigger PPO update if buffer is full AND learning is enabled
+        learn_enabled = self._cfg.get("agent", {}).get("learn_in_run_mode", False)
+        if learn_enabled and self._agent.ready_to_update():
             _, _, last_val = self._agent.select_action(next_state)
             self._agent.update(last_val if not done else 0.0)
-            logger.info("[Explore] PPO update triggered at step %d", self._ep_steps)
+            logger.info("[Agent] PPO update triggered")
 
         # Check if we should switch to planned navigation
         frontiers = self._grid.get_frontiers(
