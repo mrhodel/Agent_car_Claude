@@ -37,8 +37,9 @@ logger = logging.getLogger(__name__)
 
 # ── Shared state (module-level; one streamer per process) ────────
 _state_lock  = threading.Lock()
+_frame_cond  = threading.Condition(_state_lock)
+_frame_seq   = 0
 _jpeg_bytes: Optional[bytes] = None
-_frame_event  = threading.Event()   # signalled each time a new frame arrives
 
 _INDEX_HTML = b"""\
 <!doctype html>
@@ -105,6 +106,8 @@ class _StreamHandler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]   # strip cache-bust query string
         if path == "/":
             self._serve_index()
+        elif path == "/stream":
+            self._serve_stream()
         elif path == "/frame":
             self._serve_frame()
         else:
@@ -132,6 +135,46 @@ class _StreamHandler(BaseHTTPRequestHandler):
         self.send_header("Expires",        "0")
         self.end_headers()
         self.wfile.write(data)
+
+    def _serve_stream(self) -> None:
+        """Serve a multipart/x-mixed-replace MJPEG stream."""
+        boundary = "frame"
+
+        self.send_response(200)
+        self.send_header("Age", "0")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        self.send_header("Connection", "close")
+        self.send_header(
+            "Content-Type",
+            f"multipart/x-mixed-replace; boundary={boundary}",
+        )
+        self.end_headers()
+        try:
+            last_seq = -1
+            while True:
+                # Wait for a new frame without interfering with other clients.
+                with _frame_cond:
+                    _frame_cond.wait_for(lambda: _frame_seq != last_seq, timeout=1.0)
+                    seq = _frame_seq
+                    data = _jpeg_bytes
+                if seq == last_seq or not data:
+                    continue
+                last_seq = seq
+
+                self.wfile.write(f"--{boundary}\r\n".encode("utf-8"))
+                self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                self.wfile.write(f"Content-Length: {len(data)}\r\n\r\n".encode("utf-8"))
+                self.wfile.write(data)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception:
+            # Avoid taking down the server thread on per-client stream errors.
+            return
+
 
 
 class MJPEGStreamer:
@@ -198,7 +241,8 @@ class MJPEGStreamer:
         ok, buf = cv2.imencode(".jpg", bgr, encode_params)
         if not ok:
             return
-        global _jpeg_bytes
-        with _state_lock:
+        global _jpeg_bytes, _frame_seq
+        with _frame_cond:
             _jpeg_bytes = buf.tobytes()
-        _frame_event.set()
+            _frame_seq += 1
+            _frame_cond.notify_all()

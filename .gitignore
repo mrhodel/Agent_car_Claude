@@ -40,3 +40,7 @@ Thumbs.db
 *.env
 .env
 secrets.yaml
+# Local autopatch backups
+*.bak
+*.bak[0-9]
+*.bak_autopatch_*

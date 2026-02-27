@@ -237,11 +237,10 @@ class AgentOrchestrator:
             self._transition(AgentState.RECOVER)
             return
 
-        # Read camera and run vision
-        frame = self._camera.read()
+        # NOTE: VisionPipeline (MiDaS/YOLO/features) is expensive on Pi CPU.
+        # The RL environment throttles vision internally; avoid duplicating it
+        # here so the stream thread and HAL threads aren't CPU-starved.
         obs_result = None
-        if frame is not None:
-            obs_result = self._vision.process(frame, us_dist)
 
         # Sensor fusion – single US forward reading at robot heading
         heading_deg = math.degrees(self._pose.theta)
@@ -467,33 +466,42 @@ class AgentOrchestrator:
         read its latest frame and overlay current shared state (action,
         reward, US dist) which is updated at control-loop speed.
         """
+        import numpy as np
+        import cv2
+
         interval = 0.067  # ~15 fps stream rate
+        max_stale_s = float(self._cfg.get('hal', {}).get('camera', {}).get('stream_max_stale_s', 1.0))
+
         while self._running:
             t0 = time.monotonic()
             try:
-                frame = self._camera.read()
-                if frame is not None:
-                    annotated = self._draw_overlay(
-                        frame,
-                        self._last_us_dist,
-                        self._last_action_name,
-                        self._last_reward,
-                        self._last_ep_total,
-                        self._ep_steps,
-                        self._stream_frame_count,
-                    )
-                    self._streamer.push_frame(annotated)
-                    self._stream_frame_count += 1
-                else:
-                    logger.debug("[Stream] camera.read() returned None (f=%d)",
-                                 self._stream_frame_count)
+                frame, t_cap = self._camera.read_with_timestamp()
+                age_s = (time.monotonic() - t_cap) if t_cap else 1e9
+
+                if frame is None or age_s > max_stale_s:
+                    w, h = self._camera.resolution
+                    frame = np.zeros((h, w, 3), dtype=np.uint8)
+                    cv2.putText(frame, 'NO CAMERA', (10, max(30, h // 2)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                annotated = self._draw_overlay(
+                    frame,
+                    self._last_us_dist,
+                    self._last_action_name,
+                    self._last_reward,
+                    self._last_ep_total,
+                    self._ep_steps,
+                    self._stream_frame_count,
+                )
+                self._streamer.push_frame(annotated)
+                self._stream_frame_count += 1
             except Exception as exc:
                 logger.warning("[Stream] loop exception: %s", exc, exc_info=True)
+
             elapsed = time.monotonic() - t0
             rem = interval - elapsed
             if rem > 0:
                 time.sleep(rem)
-
     # ── Helpers ───────────────────────────────────────────────────
 
     def _full_scan(self) -> None:

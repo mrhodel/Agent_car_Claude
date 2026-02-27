@@ -46,9 +46,12 @@ hal:
     # 'picamera2' is only needed if a CSI module is fitted instead.
     driver: usb                # usb | picamera2 | simulation
     device_index: 0            # USB video device index
+    device_path: /dev/v4l/by-id/usb-DHZJ-240229-XH_Integrated_Webcam_HD-video-index0   # Use V4L2 device path (more reliable than index)
     width: 320
     height: 240
     fps: 15
+    # Seconds of identical-looking frames before forcing a USB reopen
+    freeze_reopen_s: 3.0
     auto_exposure: true
     # Optional MJPEG stream for remote monitoring
     stream_port: 8080
@@ -66,6 +69,9 @@ perception:
     output_size: [16, 16]      # downsampled depth map fed to RL
     # If model=none, a simple stereo-disparity proxy is used
     normalize: true
+    # Limit Torch CPU threads to keep streaming responsive
+    torch_threads: 2
+    torch_interop_threads: 1
 
   obstacle:
     confidence_threshold: 0.50

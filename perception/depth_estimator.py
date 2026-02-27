@@ -40,6 +40,8 @@ class DepthEstimator:
         self._model_name = cfg.get("model", "none")
         self._out_h, self._out_w = cfg.get("output_size", [16, 16])
         self._normalize = cfg.get("normalize", True)
+        self._torch_threads = cfg.get("torch_threads")
+        self._torch_interop_threads = cfg.get("torch_interop_threads")
         self._model = None
         self._transform = None
         self._device = "cpu"
@@ -49,9 +51,28 @@ class DepthEstimator:
 
     # ── Initialisation ────────────────────────────────────────────
 
+    def _configure_torch_threads(self, torch) -> None:
+        """Best-effort cap on Torch CPU thread usage to avoid starving other threads."""
+        try:
+            if self._torch_threads is not None:
+                n = int(self._torch_threads)
+                if n > 0:
+                    torch.set_num_threads(n)
+        except Exception:
+            pass
+        try:
+            if self._torch_interop_threads is not None and hasattr(torch, "set_num_interop_threads"):
+                n = int(self._torch_interop_threads)
+                if n > 0:
+                    torch.set_num_interop_threads(n)
+        except Exception:
+            pass
+
+
     def _load_midas(self) -> None:
         try:
             import torch
+            self._configure_torch_threads(torch)
             torch_hub_name = _MIDAS_MODELS.get(self._model_name, "MiDaS_small")
             logger.info("[Depth] Loading %s ...", torch_hub_name)
             self._model = torch.hub.load("intel-isl/MiDaS", torch_hub_name,

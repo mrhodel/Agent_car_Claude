@@ -113,6 +113,12 @@ class RobotEnv:
         self._side_depth_close = float(action_cfg.get("side_depth_close", 0.75))
         # Cache last depth map for side clearance checks
         self._last_depth_map: np.ndarray = np.full((16, 16), 0.5, dtype=np.float32)
+        self._last_obs_result = None
+        self._need_frame_after_t: float = 0.0
+        self._force_vision_next: bool = False
+        self._pre_gimbal_frame = None
+        self._no_fresh_vision_steps = 0
+        self._last_failsafe_warn_t = 0.0
         # No ray_angles needed: ultrasonic is fixed (always forward = 0°)
 
         self._emergency_cm  = float(cfg.get("agent", {}).get(
@@ -386,6 +392,27 @@ class RobotEnv:
         return self._execute_action_sim(action)
 
     def _execute_action_robot(self, action: int) -> bool:
+        # FAILSAFE_GUARD_MOTION: do not drive while awaiting a verified post-gimbal view
+        if action in (ACT_FORWARD, ACT_BACKWARD, ACT_STRAFE_LEFT, ACT_STRAFE_RIGHT, ACT_ROTATE_LEFT, ACT_ROTATE_RIGHT):
+            if self._need_frame_after_t > 0.0 or bool(getattr(self, '_force_vision_next', False)): 
+                if self._motors: self._motors.stop()
+                now = time.monotonic()
+                if (now - self._last_failsafe_warn_t) > 1.0:
+                    logger.warning('[FailSafe] Blocking motion until post-pan fresh vision is available')
+                    self._last_failsafe_warn_t = now
+                return False
+            # Also refuse motion if camera frames are too old (don't drive blind).
+            if self._camera and hasattr(self._camera, 'read_with_timestamp'):
+                _f, _t = self._camera.read_with_timestamp()
+                if not _t or (time.monotonic() - float(_t)) > 1.0:
+                    if self._motors: self._motors.stop()
+                    self._force_vision_next = True
+                    self._no_fresh_vision_steps += 1
+                    now = time.monotonic()
+                    if (now - self._last_failsafe_warn_t) > 1.0:
+                        logger.warning('[FailSafe] Blocking motion: camera frames stale (>1.0s)')
+                        self._last_failsafe_warn_t = now
+                    return False
         # ── Normal action execution ───────────────────────────────
         if self._controller:
             self._controller.move_action(action, self._base_speed,
@@ -395,13 +422,41 @@ class RobotEnv:
         if self._gimbal:
             step = self._gimbal_step
             if action == ACT_PAN_LEFT:
+                if self._camera:
+                    try:
+                        self._pre_gimbal_frame = self._camera.read()
+                    except Exception:
+                        self._pre_gimbal_frame = None
                 self._gimbal.move_pan(-step)
+                self._need_frame_after_t = time.monotonic()
+                self._force_vision_next = True
             elif action == ACT_PAN_RIGHT:
+                if self._camera:
+                    try:
+                        self._pre_gimbal_frame = self._camera.read()
+                    except Exception:
+                        self._pre_gimbal_frame = None
                 self._gimbal.move_pan( step)
+                self._need_frame_after_t = time.monotonic()
+                self._force_vision_next = True
             elif action == ACT_TILT_UP:
+                if self._camera:
+                    try:
+                        self._pre_gimbal_frame = self._camera.read()
+                    except Exception:
+                        self._pre_gimbal_frame = None
                 self._gimbal.move_tilt( step)
+                self._need_frame_after_t = time.monotonic()
+                self._force_vision_next = True
             elif action == ACT_TILT_DOWN:
+                if self._camera:
+                    try:
+                        self._pre_gimbal_frame = self._camera.read()
+                    except Exception:
+                        self._pre_gimbal_frame = None
                 self._gimbal.move_tilt(-step)
+                self._need_frame_after_t = time.monotonic()
+                self._force_vision_next = True
         # Brief execution time — always stop motors even on interrupt
         try:
             time.sleep(0.08)
@@ -454,8 +509,9 @@ class RobotEnv:
     def _sense(self):
         """Collect sensor readings and run vision pipeline.
         
-        Vision (MiDaS depth) is expensive on Pi CPU (~600ms). We run it every
-        `vision_every_n_steps` steps and reuse the cached depth map otherwise.
+        Vision (MiDaS depth / YOLO / feature extraction) is expensive on Pi CPU.
+        We run it every `vision_every_n_steps` steps and reuse cached results
+        otherwise.
         """
         # Ultrasonic: single fixed forward reading (sensor does NOT sweep)
         if self._mode == "robot" and self._us:
@@ -466,16 +522,72 @@ class RobotEnv:
             us_dist = 200.0
 
         us_dists = [us_dist]   # 1-element list; shape matches self._n_rays == 1
+        obs_result = self._last_obs_result
 
-        obs_result = None
-        vision_interval = int(self._cfg.get("rl", {}).get("vision_every_n_steps", 3))
-        if self._camera and self._vision:
-            if (self._step_count % vision_interval) == 0:
+        rl_cfg = self._cfg.get("rl", {})
+        # Support both legacy and current config placement.
+        vision_interval = (
+            rl_cfg.get("vision_every_n_steps")
+            if rl_cfg.get("vision_every_n_steps") is not None
+            else rl_cfg.get("ppo", {}).get("vision_every_n_steps")
+        )
+        try:
+            vision_interval = int(vision_interval) if vision_interval is not None else 3
+        except Exception:
+            vision_interval = 3
+        vision_interval = max(1, vision_interval)
+
+        force_vision = bool(self._force_vision_next)
+        self._force_vision_next = False
+        should_run_vision = force_vision or ((self._step_count % vision_interval) == 0)
+
+        def _mad(a, b) -> float:
+            try:
+                import numpy as _np
+                if a is None or b is None: return 1e9
+                if a.shape != b.shape: return 1e9
+                return float(_np.mean(_np.abs(a.astype(_np.int16) - b.astype(_np.int16))))
+            except Exception:
+                return 1e9
+
+        if self._camera and self._vision and should_run_vision:
+            frame = None
+            if self._need_frame_after_t > 0.0:
+                after_t = float(self._need_frame_after_t)
+                frame = self._camera.read_fresh(after_t=after_t, timeout_s=0.6)
+                # MAD_THRESHOLD_AFTER_GIMBAL: ensure the view actually changed post-move
+                if frame is not None and self._pre_gimbal_frame is not None:
+                    if _mad(frame, self._pre_gimbal_frame) < 0.3:
+                        # Likely still the pre-move buffer (or camera stuck). Treat as not fresh.
+                        frame = None
+
+                if frame is None:
+                    # Keep trying next step until we get a post-move frame.
+                    self._force_vision_next = True
+                    self._no_fresh_vision_steps += 1
+                    # MAX_NO_FRESH_STEPS
+                    if self._no_fresh_vision_steps >= 20:
+                        if self._motors: self._motors.stop()
+                        logger.error('[FailSafe] Vision did not update after gimbal move for 20 steps; holding STOP')
+
+                    logger.warning(
+                        '[Env] No fresh frame after gimbal move (timeout=%.2fs) — using cached observation',
+                        0.6,
+                    )
+                else:
+                    self._need_frame_after_t = 0.0
+                    self._pre_gimbal_frame = None
+                    self._no_fresh_vision_steps = 0
+            else:
                 frame = self._camera.read()
-                if frame is not None:
-                    obs_result = self._vision.process(frame, us_dist)
-                    if obs_result is not None and obs_result.depth_map is not None:
-                        self._last_depth_map = obs_result.depth_map
+
+            if frame is not None:
+                new_result = self._vision.process(frame, us_dist)
+                if new_result is not None:
+                    obs_result = new_result
+                    self._last_obs_result = new_result
+                    if new_result.depth_map is not None:
+                        self._last_depth_map = new_result.depth_map
 
         return us_dists, obs_result
 
