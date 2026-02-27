@@ -51,53 +51,51 @@ class RewardCalculator:
 
         # ── Collision penalty ────────────────────────────────────
         if collided:
-            r += float(cfg.get("collision_penalty", -15.0))
+            # Drastically increase penalty to outweigh staying alive by doing nothing
+            r += float(cfg.get("collision_penalty", -40.0))
 
         # ── Proximity penalty ────────────────────────────────────
         prox_scale = float(cfg.get("proximity_penalty_scale", -0.5))
-        danger_cm  = 30.0
+        danger_cm  = 60.0  # Increased danger zone
         if nearest_obstacle_cm < danger_cm:
             # Gradient: stronger penalty as obstacle gets closer
-            r += prox_scale * (1.0 / max(1.0, nearest_obstacle_cm))
+            r += prox_scale * (1.0 - (nearest_obstacle_cm / danger_cm))
 
         # ── Time cost ────────────────────────────────────────────
-        r += float(cfg.get("time_step_cost", -0.01))
+        # Increase time cost to encourage faster completion
+        r += float(cfg.get("time_step_cost", -0.05))
 
         # ── Momentum bonus (same locomotion action repeated) ─────
         # Small bonus for continuing the same direction of travel.
-        # Deliberately NO reversal penalty: backing away from a wall and
-        # then going forward is exactly the desired recovery behaviour.
         # Gimbal actions are excluded — no momentum reward for camera moves.
         smooth_bonus = float(cfg.get("smooth_motion_bonus", 0.05))
         if action not in _SPINNING_ACTIONS and action not in _GIMBAL_ACTIONS:
             if action == prev_action:
-                r += smooth_bonus * 0.5
+                r += smooth_bonus
 
         # ── Forward bonus ──────────────────────────────────────────
-        # Small reward for choosing to move forward, nudging the policy
-        # toward exploration over passive avoidance.
+        # Significant reward for choosing to move forward
         if action == ACT_FORWARD:
-            r += float(cfg.get("forward_bonus", 0.02))
+            r += float(cfg.get("forward_bonus", 0.15))
 
         # ── Backward-step cost ───────────────────────────────────────
-        # Recurring penalty for reversing — makes wall-backing unprofitable
-        # without blocking short retreats for genuine obstacle avoidance.
         if action == ACT_BACKWARD:
-            r += float(cfg.get("backward_step_cost", -0.05))
+            r += float(cfg.get("backward_step_cost", -0.1))
 
         # ── Gimbal-only action extra cost ─────────────────────────
         # Camera pan/tilt gives the policy perceptual info but the policy
         # was using gimbal moves as cheap "safe" filler (~40/143 steps).
-        # Extra cost makes locomotion relatively more attractive.
         if action in _GIMBAL_ACTIONS:
-            r += float(cfg.get("gimbal_step_cost", -0.04))
+            r += float(cfg.get("gimbal_step_cost", -0.1))
 
         # ── Sustained rotation penalty ────────────────────────────
-        # Small per-step penalty that grows with consecutive rotations,
-        # discouraging the policy from spinning in place.
-        if action in _SPINNING_ACTIONS and consecutive_rotations > 2:
-            spin_penalty = float(cfg.get("spin_penalty", -0.1))
-            r += spin_penalty * min(consecutive_rotations - 2, 8)
+        # Strong penalty for spinning in place
+        if action in _SPINNING_ACTIONS:
+            spin_penalty = float(cfg.get("spin_penalty", -0.2))
+            # Penalize even the first rotation if it becomes a habit, but definitely sequences
+            r += spin_penalty
+            if consecutive_rotations > 1:
+                r += spin_penalty * min(consecutive_rotations, 10)
 
         return r
 

@@ -323,6 +323,13 @@ class RobotEnv:
         if (emergency or stuck_backward) and self._mode == "robot" and self._motors:
             self._motors.stop()
 
+                
+        done_reason = "active"
+        if emergency:       done_reason = "emergency_stop"
+        elif collided:      done_reason = "collision"
+        elif stuck_backward: done_reason = "stuck_backward"
+        elif self._step_count >= self._max_steps: done_reason = "timeout"
+
         state = self._get_state(obs_result, us_dists)
         info  = {
             "step": self._step_count,
@@ -330,6 +337,7 @@ class RobotEnv:
             "nearest_cm": nearest_cm,
             "collided": collided,
             "stuck_backward": stuck_backward,
+            "done_reason": done_reason,
         }
         return state, reward, done, info
 

@@ -59,7 +59,6 @@ class VisionPipeline:
         self._depth_est  = DepthEstimator(cfg.get("depth",    {}))
         self._obstacle   = ObstacleDetector(cfg.get("objects",  {}))
         # Pass obstacle cfg for confidence/threshold settings too
-        self._obstacle_vis = ObstacleDetector(cfg.get("obstacle", {}))
         self._floor      = FloorDetector(cfg.get("floor",     {}))
         self._extractor  = self._build_extractor()
 

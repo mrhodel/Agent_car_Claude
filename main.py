@@ -122,7 +122,12 @@ def train_mode(cfg: dict, args: argparse.Namespace) -> None:
         results = trainer.evaluate(n_episodes=10)
         logging.getLogger().info("Final eval: %s", results)
     except (KeyboardInterrupt, SystemExit):
-        logging.getLogger().warning("[Train] Interrupted — stopping hardware")
+        logging.getLogger().warning("[Train] Interrupted — saving emergency checkpoint")
+        try:
+             agent.save_checkpoint("latest")
+             logging.getLogger().info("[Train] Saved state to policy_latest.pt")
+        except Exception as e:
+             logging.getLogger().error("[Train] Could not save emergency checkpoint: %s", e)
     finally:
         if mode == "robot":
             if motors:
@@ -319,6 +324,21 @@ def main() -> None:
                         help="Path to load a saved policy checkpoint")
     parser.add_argument("--log-level",  default="INFO")
     args = parser.parse_args()
+
+    # -- Auto-detect latest/final checkpoint if none provided --
+    if args.checkpoint is None and args.mode in ["train", "run", "eval", "midas_test"]:
+
+        # Priority 1: explicitly finalized model
+        final_pt = "models/checkpoints/policy_final.pt"
+        # Priority 2: latest run trace
+        latest_pt = "models/checkpoints/policy_latest.pt"
+        
+        if os.path.exists(final_pt):
+            logging.info("Auto-loading default checkpoint: %s", final_pt)
+            args.checkpoint = final_pt
+        elif os.path.exists(latest_pt):
+            logging.info("Auto-loading verbose checkpoint: %s", latest_pt)
+            args.checkpoint = latest_pt
 
     cfg = load_config(args.config)
     log_dir   = cfg.get("agent", {}).get("logging", {}).get("log_dir", "logs/")

@@ -15,6 +15,8 @@ Key features:
 from __future__ import annotations
 
 import logging
+import re
+import os
 import math
 import os
 from collections import deque
@@ -243,11 +245,28 @@ class PPOAgent:
     def load_checkpoint(self, path: str) -> None:
         if self._torch_available:
             import torch
-            self._policy.load_state_dict(
-                torch.load(path, map_location="cpu"))
-            logger.info("[PPO] Checkpoint loaded <- %s", path)
+            try:
+                self._policy.load_state_dict(
+                    torch.load(path, map_location="cpu"))
+                logger.info("[PPO] Checkpoint loaded <- %s", path)
+            except Exception as e:
+                logger.error("[PPO] Failed to load checkpoint: %s", e)
+                raise
         else:
             self._policy.load(path)
+        
+        # Parse episode number from filename (e.g. policy_ep8.pt -> 8)
+        # Sets the internal counter so next episode is N+1
+        try:
+            filename = os.path.basename(path)
+            # Find integer after '_ep'
+            match = re.search(r"_ep(\d+)\.", filename)
+            if match:
+                ep_num = int(match.group(1))
+                self._episode = ep_num
+                logger.info("[PPO] Resuming from episode %d", ep_num)
+        except Exception:
+            pass
 
     # ── GAE ───────────────────────────────────────────────────────
 

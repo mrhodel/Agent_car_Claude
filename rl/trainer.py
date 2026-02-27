@@ -59,6 +59,25 @@ class Trainer:
 
     def train(self, n_episodes: int = 500) -> None:
         """Run PPO training for ``n_episodes`` episodes."""
+        
+        # Prune future checkpoints if resuming from an earlier point
+        start_ep = self._agent._episode
+        if start_ep > 0:
+            logger.info("[Trainer] Pruning checkpoints > ep%d to ensure linear history...", start_ep)
+            import glob
+            import re
+            ckpt_dir = self._agent._ckpt_dir
+            for fpath in glob.glob(os.path.join(ckpt_dir, "policy_ep*.pt")):
+                try:
+                    fname = os.path.basename(fpath)
+                    match = re.search(r"policy_ep(\d+)\.pt", fname)
+                    if match:
+                        ep_num = int(match.group(1))
+                        if ep_num > start_ep:
+                            logger.info("  -> Deleted stale checkpoint: %s", fname)
+                            os.remove(fpath)
+                except Exception as e:
+                    logger.warning("  Failed to prune %s: %s", fpath, e)
         logger.info("[Trainer] Starting training  n_episodes=%d", n_episodes)
         t_start = time.monotonic()
         global_step = 0
@@ -102,6 +121,14 @@ class Trainer:
 
             self._agent.on_episode_end(ep_reward, ep_length)
 
+            # Detailed termination log
+            term_reason = info.get("done_reason", "unknown") if 'info' in locals() else "unknown"
+            final_dist  = info.get("nearest_cm", 0.0)      if 'info' in locals() else 0.0
+            logger.info(
+                "[Train] ep=%d  R=%+6.2f  steps=%3d  end=%-14s  final_us=%5.1f cm",
+                episode, ep_reward, ep_length, term_reason, final_dist
+            )
+
             # Per-episode action distribution
             total_acts = max(1, sum(action_counts.values()))
             dist_parts = []
@@ -123,6 +150,28 @@ class Trainer:
                              episode, n_episodes, global_step, elapsed)
 
         logger.info("[Trainer] Training complete (%d episodes)", n_episodes)
+        # Save "latest" checkpoint for easy resumption
+        self._agent.save_checkpoint("latest")
+
+        # Simple improvement check (if enough episodes run)
+        if len(self._agent._ep_rewards) >= 20:
+            first_10 = sum(self._agent._ep_rewards[:10]) / 10.0
+            last_10  = sum(self._agent._ep_rewards[-10:]) / 10.0
+            improvement = last_10 - first_10
+            if first_10 != 0:
+                pct = (improvement / abs(first_10)) * 100.0
+            else:
+                pct = 0.0
+
+            logger.info("[Trainer] Session progress: First10 avg=%.1f  Last10 avg=%.1f  Diff=%+.1f (%.0f%%)",
+                        first_10, last_10, improvement, pct)
+
+            if improvement > 0:
+                logger.info("[Trainer] PERFORMANCE IMPROVED! To seal this model as golden:")
+                logger.info("          mv models/checkpoints/policy_latest.pt models/checkpoints/policy_final.pt")
+        else:
+            logger.info("[Trainer] Run too short to gauge improvement. Saved as policy_latest.pt")
+    
 
     # ── Evaluation ────────────────────────────────────────────────
 
