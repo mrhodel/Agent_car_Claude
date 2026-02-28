@@ -55,8 +55,8 @@ class RewardCalculator:
             r += float(cfg.get("collision_penalty", -40.0))
 
         # ── Proximity penalty ────────────────────────────────────
-        prox_scale = float(cfg.get("proximity_penalty_scale", -0.5))
-        danger_cm  = 60.0  # Increased danger zone
+        prox_scale = float(cfg.get("proximity_penalty_scale", -2.0))
+        danger_cm  = 60.0
         if nearest_obstacle_cm < danger_cm:
             # Gradient: stronger penalty as obstacle gets closer
             r += prox_scale * (1.0 - (nearest_obstacle_cm / danger_cm))
@@ -74,10 +74,9 @@ class RewardCalculator:
                 r += smooth_bonus
 
         # ── Forward bonus ──────────────────────────────────────────
-        # MAJOR CHANGE: Significantly reward forward movement to encourage driving
-        # Current: 0.15 -> 0.45. This incentive is much stronger now.
+        # BALANCING: Reduced from 0.45 to encourage stopping before hitting walls
         if action == ACT_FORWARD:
-            r += float(cfg.get("forward_bonus", 0.45))
+            r += float(cfg.get("forward_bonus", 0.15))
 
         # ── Backward-step cost ───────────────────────────────────────
         if action == ACT_BACKWARD:
@@ -94,9 +93,9 @@ class RewardCalculator:
             r += float(cfg.get("gimbal_step_cost", -0.1))
 
         # ── Sustained rotation penalty ────────────────────────────
-        # Strong penalty for spinning in place
+        # Reduced penalty for spinning to allow exploration
         if action in _SPINNING_ACTIONS:
-            spin_penalty = float(cfg.get("spin_penalty", -0.2))
+            spin_penalty = float(cfg.get("spin_penalty", -0.05))
             # Penalize even the first rotation if it becomes a habit, but definitely sequences
             r += spin_penalty
             if consecutive_rotations > 1:
