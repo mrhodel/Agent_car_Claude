@@ -551,7 +551,7 @@ class RobotEnv:
             if perp2 > radius**2: continue
             hit = proj - math.sqrt(max(0, radius**2 - perp2))
             dist_cm = hit * 100.0
-            if 2 <= dist_cm < min_dist:
+            if dist_cm < min_dist:
                 min_dist = dist_cm
         
         # Check room boundaries (Square room +/- 5m)
@@ -565,12 +565,12 @@ class RobotEnv:
             t1 = (5.0 - rx) / c
             if t1 > 0:
                 y_hit = ry + t1 * s
-                if abs(y_hit) <= 5.0: min_dist = min(min_dist, t1 * 100.0)
+                if abs(y_hit) <= 5.05: min_dist = min(min_dist, t1 * 100.0)
             # x = -5
             t2 = (-5.0 - rx) / c
             if t2 > 0:
                 y_hit = ry + t2 * s
-                if abs(y_hit) <= 5.0: min_dist = min(min_dist, t2 * 100.0)
+                if abs(y_hit) <= 5.05: min_dist = min(min_dist, t2 * 100.0)
 
         # Check y-walls
         if abs(s) > 1e-3:
@@ -578,12 +578,12 @@ class RobotEnv:
             t3 = (5.0 - ry) / s
             if t3 > 0:
                 x_hit = rx + t3 * c
-                if abs(x_hit) <= 5.0: min_dist = min(min_dist, t3 * 100.0)
+                if abs(x_hit) <= 5.05: min_dist = min(min_dist, t3 * 100.0)
             # y = -5
             t4 = (-5.0 - ry) / s
             if t4 > 0:
                 x_hit = rx + t4 * c
-                if abs(x_hit) <= 5.0: min_dist = min(min_dist, t4 * 100.0)
+                if abs(x_hit) <= 5.05: min_dist = min(min_dist, t4 * 100.0)
 
         return min_dist
 
@@ -633,36 +633,39 @@ class RobotEnv:
         
         img = np.full((height, width, 3), 255, dtype=np.uint8)
         cv2.rectangle(img, (0, height//2), (width, height), (240, 240, 240), -1) # Floor
-
-        # ─── 1. Render Visual Image (Raycast columns) ───
+        
+        # ─── 1. Render Visual Image (Raycast simple columns) ───
+        # We iterate over a subsample of columns for speed
         n_rays_viz = width // 4
         angle_step_viz = math.radians(fov_deg) / n_rays_viz
         start_angle_viz = self._robot_theta + math.radians(fov_deg/2)
         
-        # We also want to compute the 16x16 depth map directly via raycasting
-        # instead of downsampling the image (which is messy).
-        # We need 16 columns of depth. Let's cast 16 rays evenly spaced in FOV.
-        
-        depth_map_line = np.zeros(16, dtype=np.float32)
-        
-        # Ray casting for the visual image
         for i in range(n_rays_viz):
             angle = start_angle_viz - i * angle_step_viz
             min_dist = max_dist
             
-            for ox, oy, r in self._sim_obstacles:
-                dx = ox - self._robot_x
-                dy = oy - self._robot_y
-                proj = dx * math.cos(angle) + dy * math.sin(angle)
+            # Check obstacles
+            dx_all = [ox - self._robot_x for ox, _, _ in self._sim_obstacles]
+            dy_all = [oy - self._robot_y for _, oy, _ in self._sim_obstacles]
+            r_all  = [rad for _, _, rad in self._sim_obstacles]
+            
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            
+            # Manual loop for obstacles (faster than list comp in python loop maybe?)
+            for idx_obs in range(len(self._sim_obstacles)):
+                dx = dx_all[idx_obs]
+                dy = dy_all[idx_obs]
+                r  = r_all[idx_obs]
+                
+                proj = dx * cos_a + dy * sin_a
                 if proj <= 0: continue
-                perp2 = (dx**2 + dy**2) - proj**2
-                if perp2 > r**2: continue
-                hit = proj - math.sqrt(max(0, r**2 - perp2))
-                if hit < min_dist:
-                    min_dist = hit
+                perp2 = (dx*dx + dy*dy) - proj*proj
+                if perp2 > r*r: continue
+                hit = proj - math.sqrt(max(0, r*r - perp2))
+                if hit < min_dist: min_dist = hit
             
-            # Wall checks (Fixed)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            # Room Boundaries (Square +/- 5m)
             if abs(cos_a) > 1e-3:
                 t = (5.0 - self._robot_x) / cos_a
                 if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
@@ -674,19 +677,7 @@ class RobotEnv:
                 t = (-5.0 - self._robot_y) / sin_a
                 if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
             
-            # Wall checks (Fixed)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
-            if abs(cos_a) > 1e-3:
-                t = (5.0 - self._robot_x) / cos_a
-                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_x) / cos_a
-                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
-            if abs(sin_a) > 1e-3:
-                t = (5.0 - self._robot_y) / sin_a
-                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_y) / sin_a
-                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
-            
+            # Draw column
             if min_dist < max_dist:
                 h = int(height / (min_dist + 0.1))
                 h = min(h, height)
@@ -694,34 +685,34 @@ class RobotEnv:
                 color = max(0, min(255, color))
                 x_start = i * 4
                 x_end = (i+1) * 4
-                cv2.rectangle(img, (x_start, height//2 - h//2), 
-                                   (x_end, height//2 + h//2), 
-                                   (color, color, color), -1)
-
+                cv2.rectangle(img, (x_start, height//2 - h//2), (x_end, height//2 + h//2), (color, color, color), -1)
+        
         # ─── 2. Compute Synthetic Depth Map (16x16) ───
-        # We need a 16x16 grid.
         n_rays_depth = 16
         angle_step_depth = math.radians(fov_deg) / n_rays_depth
-        start_angle_depth = self._robot_theta + math.radians(fov_deg/2) 
-
+        start_angle_depth = self._robot_theta + math.radians(fov_deg/2)
+        
+        depth_line = np.zeros(n_rays_depth, dtype=np.float32)
+        
         for c in range(n_rays_depth):
-            # Center of the bin
+            # Use center of the bin
             angle = start_angle_depth - (c + 0.5) * angle_step_depth
             min_dist = max_dist
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
             
+            # Obstacles
             for ox, oy, r in self._sim_obstacles:
                 dx = ox - self._robot_x
                 dy = oy - self._robot_y
-                proj = dx * math.cos(angle) + dy * math.sin(angle)
+                proj = dx * cos_a + dy * sin_a
                 if proj <= 0: continue
-                perp2 = (dx**2 + dy**2) - proj**2
-                if perp2 > r**2: continue
-                hit = proj - math.sqrt(max(0, r**2 - perp2))
-                if hit < min_dist:
-                    min_dist = hit
+                perp2 = (dx*dx + dy*dy) - proj*proj
+                if perp2 > r*r: continue
+                hit = proj - math.sqrt(max(0, r*r - perp2))
+                if hit < min_dist: min_dist = hit
             
-            # Wall checks (Fixed)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            # Walls
             if abs(cos_a) > 1e-3:
                 t = (5.0 - self._robot_x) / cos_a
                 if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
@@ -733,25 +724,9 @@ class RobotEnv:
                 t = (-5.0 - self._robot_y) / sin_a
                 if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
             
-            # Wall checks (Fixed)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
-            if abs(cos_a) > 1e-3:
-                t = (5.0 - self._robot_x) / cos_a
-                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_x) / cos_a
-                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
-            if abs(sin_a) > 1e-3:
-                t = (5.0 - self._robot_y) / sin_a
-                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_y) / sin_a
-                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
-            
-            # Map distance to 0-1 (Inverse depth style: 1=Close, 0=Far)
-            inv_depth = 1.0 - (min_dist / max_dist)
-            inv_depth = max(0.0, min(1.0, inv_depth))
-            depth_map_line[c] = inv_depth
-
-        # Create 16x16 by stacking. 
-        depth_map = np.tile(depth_map_line, (16, 1)).astype(np.float32)
+            # Invert: 1.0 = Close, 0.0 = Far (matches real depth map normalization)
+            inv = 1.0 - (min_dist / max_dist)
+            depth_line[c] = max(0.0, min(1.0, inv))
         
+        depth_map = np.tile(depth_line, (16, 1)).astype(np.float32)
         return img, depth_map
