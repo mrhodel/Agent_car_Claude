@@ -53,7 +53,7 @@ def setup_logging(level: str, log_dir: str) -> None:
         logging.FileHandler(os.path.join(log_dir, "agent.log")),
     ]
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO),
-                        format=fmt, handlers=handlers)
+                        format=fmt, handlers=handlers, force=True)
 
 
 def run_mode(cfg: dict, args: argparse.Namespace) -> None:

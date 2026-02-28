@@ -56,7 +56,7 @@ class RewardCalculator:
 
         # ── Proximity penalty ────────────────────────────────────
         prox_scale = float(cfg.get("proximity_penalty_scale", -2.0))
-        danger_cm  = 60.0
+        danger_cm  = 120.0  # Increased from 60.0 cm so the agent acts sooner
         if nearest_obstacle_cm < danger_cm:
             # Gradient: stronger penalty as obstacle gets closer
             r += prox_scale * (1.0 - (nearest_obstacle_cm / danger_cm))
@@ -77,6 +77,11 @@ class RewardCalculator:
         # BALANCING: Reduced from 0.45 to encourage stopping before hitting walls
         if action == ACT_FORWARD:
             r += float(cfg.get("forward_bonus", 0.15))
+
+        # ── Turn-away bonus ───────────────────────────────────────
+        # Reward turning when near walls to actively encourage avoidance maneuvers
+        if action in _SPINNING_ACTIONS and nearest_obstacle_cm < danger_cm:
+            r += 1.0 * (1.0 - (nearest_obstacle_cm / danger_cm))
 
         # ── Backward-step cost ───────────────────────────────────────
         if action == ACT_BACKWARD:

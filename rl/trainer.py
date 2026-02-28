@@ -205,12 +205,20 @@ class Trainer:
             ep_r  = 0.0
             ep_l  = 0
             done  = False
+            end_reason = "unknown"
+            final_us = 0.0
             while not done:
                 action, _, _ = self._agent.select_action(state,
                                                           deterministic=True)
                 state, reward, done, info = self._env.step(action)
                 ep_r += reward
                 ep_l += 1
+                if done:
+                    end_reason = info.get("done_reason", "unknown")
+                    final_us = info.get("nearest_cm", 0.0)
+
+            logger.info("[Eval] ep=%-3d  R=%+7.2f  steps=%-3d  end=%-15s final_us=%-5.1f cm", 
+                        ep + 1, ep_r, ep_l, end_reason, final_us)
             rewards.append(ep_r)
             lengths.append(ep_l)
             explored.append(self._env._grid.explored_cells
