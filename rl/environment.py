@@ -555,6 +555,16 @@ class RobotEnv:
             except Exception:
                 return 1e9
 
+        if self._mode == "sim" and self._vision and should_run_vision:
+            frame = self._render_camera_sim()
+            if frame is not None:
+                new_result = self._vision.process(frame, us_dist)
+                if new_result is not None:
+                    obs_result = new_result
+                    self._last_obs_result = new_result
+                    if new_result.depth_map is not None:
+                        self._last_depth_map = new_result.depth_map
+
         if self._camera and self._vision and should_run_vision:
             frame = None
             if self._need_frame_after_t > 0.0:
@@ -706,3 +716,61 @@ class RobotEnv:
         # Show window
         cv2.imshow("Robot Sim (10x10m Room)", img)
         cv2.waitKey(1)
+
+    def _render_camera_sim(self) -> np.ndarray:
+        """Render a simulated first-person view of the room for vision training."""
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            return None
+
+        # Camera view parameters
+        width, height = 320, 240
+        fov_deg = 60.0
+        max_dist = 5.0
+        
+        # White background (walls/void)
+        img = np.full((height, width, 3), 255, dtype=np.uint8)
+        
+        # Draw floor (light grey) - horizon is halfway
+        cv2.rectangle(img, (0, height//2), (width, height), (240, 240, 240), -1)
+
+        # Simple ray-casting for obstacles
+        # We cast rays across the FOV to find distance to obstacles
+        n_rays = width // 4  # low-res raycast for speed
+        angle_step = math.radians(fov_deg) / n_rays
+        start_angle = self._robot_theta + math.radians(fov_deg/2)
+        
+        for i in range(n_rays):
+            angle = start_angle - i * angle_step
+            # Find closest intersection
+            min_dist = max_dist
+            
+            for ox, oy, r in self._sim_obstacles:
+                # Math similar to _sim_us_forward but for arbitary angle
+                dx = ox - self._robot_x
+                dy = oy - self._robot_y
+                proj = dx * math.cos(angle) + dy * math.sin(angle)
+                if proj <= 0: continue
+                perp2 = (dx**2 + dy**2) - proj**2
+                if perp2 > r**2: continue
+                hit = proj - math.sqrt(max(0, r**2 - perp2))
+                if hit < min_dist:
+                    min_dist = hit
+            
+            if min_dist < max_dist:
+                # Draw vertical strip for obstacle
+                # Height is inversely proportional to distance
+                h = int(height / (min_dist + 0.1))
+                h = min(h, height)
+                x_start = i * 4
+                x_end = (i+1) * 4
+                color = int(255 * (min_dist / max_dist)) # Darker when close
+                color = max(0, min(255, color))
+                # Draw "column"
+                cv2.rectangle(img, (x_start, height//2 - h//2), 
+                                   (x_end, height//2 + h//2), 
+                                   (color, color, color), -1)
+                                   
+        return img
