@@ -585,9 +585,11 @@ class RobotEnv:
                 x_hit = rx + t4 * c
                 if abs(x_hit) <= 5.05: min_dist = min(min_dist, t4 * 100.0)
 
-        return min_dist
-        # Clamp to min_range (2.0) to simulate hardware limit/driver hygiene
-        return max(2.0, min_dist)
+        # Apply sensor offset (distance from sensor face)
+        # Robot radius ~18cm, sensor at front
+        sensor_offset_cm = 15.0
+        final_dist = min_dist - sensor_offset_cm
+        return max(2.0, final_dist)
 
     def render(self) -> None:
         try: import cv2
