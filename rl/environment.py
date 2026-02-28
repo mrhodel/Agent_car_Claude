@@ -661,31 +661,31 @@ class RobotEnv:
                 if hit < min_dist:
                     min_dist = hit
             
-            # Wall checks (Viz)
-            c, s = math.cos(angle), math.sin(angle)
-            if abs(c) > 1e-3:
-                t = (5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-            if abs(s) > 1e-3:
-                t = (5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
+            # Wall checks (Fixed)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            if abs(cos_a) > 1e-3:
+                t = (5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+            if abs(sin_a) > 1e-3:
+                t = (5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
             
-            # Wall checks (Viz)
-            c, s = math.cos(angle), math.sin(angle)
-            if abs(c) > 1e-3:
-                t = (5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-            if abs(s) > 1e-3:
-                t = (5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
+            # Wall checks (Fixed)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            if abs(cos_a) > 1e-3:
+                t = (5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+            if abs(sin_a) > 1e-3:
+                t = (5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
             
             if min_dist < max_dist:
                 h = int(height / (min_dist + 0.1))
@@ -720,31 +720,31 @@ class RobotEnv:
                 if hit < min_dist:
                     min_dist = hit
             
-            # Wall checks (Viz)
-            c, s = math.cos(angle), math.sin(angle)
-            if abs(c) > 1e-3:
-                t = (5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-            if abs(s) > 1e-3:
-                t = (5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
+            # Wall checks (Fixed)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            if abs(cos_a) > 1e-3:
+                t = (5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+            if abs(sin_a) > 1e-3:
+                t = (5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
             
-            # Wall checks (Viz)
-            c, s = math.cos(angle), math.sin(angle)
-            if abs(c) > 1e-3:
-                t = (5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_x) / c
-                if t > 0 and t < min_dist and abs(self._robot_y + t*s) <= 5.0: min_dist = t
-            if abs(s) > 1e-3:
-                t = (5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
-                t = (-5.0 - self._robot_y) / s
-                if t > 0 and t < min_dist and abs(self._robot_x + t*c) <= 5.0: min_dist = t
+            # Wall checks (Fixed)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            if abs(cos_a) > 1e-3:
+                t = (5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_x) / cos_a
+                if t > 0 and t < min_dist and abs(self._robot_y + t*sin_a) <= 5.0: min_dist = t
+            if abs(sin_a) > 1e-3:
+                t = (5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
+                t = (-5.0 - self._robot_y) / sin_a
+                if t > 0 and t < min_dist and abs(self._robot_x + t*cos_a) <= 5.0: min_dist = t
             
             # Map distance to 0-1 (Inverse depth style: 1=Close, 0=Far)
             inv_depth = 1.0 - (min_dist / max_dist)
