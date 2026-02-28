@@ -586,6 +586,8 @@ class RobotEnv:
                 if abs(x_hit) <= 5.05: min_dist = min(min_dist, t4 * 100.0)
 
         return min_dist
+        # Clamp to min_range (2.0) to simulate hardware limit/driver hygiene
+        return max(2.0, min_dist)
 
     def render(self) -> None:
         try: import cv2
